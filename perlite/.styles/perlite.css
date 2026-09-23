@@ -273,3 +273,10 @@ h6:hover .copy-icon {
   content: none !important;
   display: none !important;
 }
+
+/* hide the vault name box and the Collapse/Expand all buttons above the file tree
+   (Perlite serves a single vault, so the "switcher" does nothing) */
+.nav-files-container .tree-item.mod-root > .tree-item-self:has(> .workspace-sidedock-vault-profile),
+.workspace-sidedock-vault-profile {
+  display: none !important;
+}

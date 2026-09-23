@@ -47,6 +47,7 @@
 - **Title-only callouts:** don't show an empty content box.
 - **Image preview:** styles for the fit-to-screen preview.
 - **External Link Icon Removal (Images Only):** Removed external-link icons from image links like `[![[_imgs/the_city/the_city_pretty.webp|sban hsmall]]](The%20City/index.md)`
+- **Vault box hidden:** the vault name box and the Expand/Collapse all buttons above the file tree are hidden. Perlite serves a single vault, so the vault "switcher" did nothing.
 
 ### Site setup (`helper.php`)
 - **CSS snippets:** the snippets enabled in the vault (`.obsidian/appearance.json` → `enabledCssSnippets`) are loaded from `.obsidian/snippets/`, after the theme.
