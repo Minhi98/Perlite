@@ -260,3 +260,16 @@ h6:hover .copy-icon {
   height: auto;
   object-fit: contain;
 }
+
+/* no external-link icon on links that wrap an image, e.g. [![[img.png]]](url)
+   (Obsidian's arrow background and theme icons such as ITS ::before site icons) */
+.external-link:has(img) {
+  background-image: none !important;
+  padding-right: 0 !important;
+  padding-inline-end: 0 !important;
+}
+.external-link:has(img)::before,
+.external-link:has(img)::after {
+  content: none !important;
+  display: none !important;
+}

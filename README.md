@@ -44,6 +44,7 @@
 - **Callout titles:** removed the `.callout-title-inner * { display: inline !important }` rule, which blocked theme subtitle layouts.
 - **Title-only callouts:** don't show an empty content box.
 - **Image preview:** styles for the fit-to-screen preview.
+- **External Link Icon Removal (Images Only):** Removed external-link icons from image links like `[![[_imgs/the_city/the_city_pretty.webp|sban hsmall]]](The%20City/index.md)`
 
 ### Site setup (`helper.php`)
 - **CSS snippets:** the snippets enabled in the vault (`.obsidian/appearance.json` → `enabledCssSnippets`) are loaded from `.obsidian/snippets/`, after the theme.
