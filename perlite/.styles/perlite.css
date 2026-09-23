@@ -280,3 +280,26 @@ h6:hover .copy-icon {
 .workspace-sidedock-vault-profile {
   display: none !important;
 }
+
+/* footnote preview shown when hovering a footnote reference */
+.popover.perlite-footnote-popover {
+  position: fixed;
+  display: block;
+  z-index: var(--layer-popover, 30);
+  width: max-content;
+  max-width: min(450px, calc(100vw - 16px));
+  max-height: min(40vh, 320px);
+  overflow: auto;
+  padding: 8px 12px;
+  box-shadow: var(--shadow-l, var(--shadow-s));
+}
+.perlite-footnote-popover .markdown-embed,
+.perlite-footnote-popover .markdown-preview-view {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+}
+.perlite-footnote-popover p {
+  margin: 0;
+}

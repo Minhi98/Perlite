@@ -2090,6 +2090,81 @@ $(document).ready(function () {
     }
   });
 
+  // footnote preview on hover (always on, independent of the page-preview setting)
+  var footnoteHideTimer = null;
+  var footnotePopover = null;
+
+  function hideFootnotePopover() {
+    clearTimeout(footnoteHideTimer);
+    if (footnotePopover) {
+      footnotePopover.remove();
+      footnotePopover = null;
+    }
+  }
+
+  function findFootnoteItem(link) {
+    var id = (link.getAttribute('href') || '').replace(/^#/, '');
+    if (!id) {
+      return null;
+    }
+    // the footnote list belonging to this note (embedded notes have their own)
+    for (var el = link.parentElement; el; el = el.parentElement) {
+      var section = el.querySelector(':scope > section.footnotes');
+      if (section) {
+        return section.querySelector('li[id="' + CSS.escape(id) + '"]');
+      }
+    }
+    return null;
+  }
+
+  function showFootnotePopover(link) {
+    var item = findFootnoteItem(link);
+    if (!item) {
+      return;
+    }
+    hideFootnotePopover();
+
+    var content = item.cloneNode(true);
+    content.querySelectorAll('.footnote-backref').forEach(function (b) { b.remove(); });
+    content.removeAttribute('id');
+
+    footnotePopover = $('<div class="popover perlite-footnote-popover">'
+      + '<div class="markdown-embed" data-type="footnote"><div class="markdown-embed-content">'
+      + '<div class="markdown-preview-view markdown-rendered"></div></div></div></div>');
+    footnotePopover.find('.markdown-preview-view').append($(content).contents());
+    footnotePopover.appendTo(document.body);
+
+    // below the link, or above it when there is no room; kept inside the window
+    var r = link.getBoundingClientRect();
+    var pop = footnotePopover[0].getBoundingClientRect();
+    var margin = 8;
+    var top = r.bottom + 6;
+    if (top + pop.height > window.innerHeight - margin && r.top - 6 - pop.height > margin) {
+      top = r.top - 6 - pop.height;
+    }
+    var left = Math.min(Math.max(margin, r.left - 12), window.innerWidth - pop.width - margin);
+    footnotePopover.css({ top: Math.max(margin, top) + 'px', left: Math.max(margin, left) + 'px' });
+  }
+
+  $(document).on('mouseenter', 'sup.footnote-ref a', function () {
+    clearTimeout(footnoteHideTimer);
+    showFootnotePopover(this);
+  });
+  $(document).on('mouseenter', '.perlite-footnote-popover', function () {
+    clearTimeout(footnoteHideTimer);
+  });
+  $(document).on('mouseleave', 'sup.footnote-ref a, .perlite-footnote-popover', function () {
+    clearTimeout(footnoteHideTimer);
+    footnoteHideTimer = setTimeout(hideFootnotePopover, 300);
+  });
+  // close it when the page scrolls or a footnote link is clicked
+  document.addEventListener('scroll', function (e) {
+    if (footnotePopover && !footnotePopover[0].contains(e.target)) {
+      hideFootnotePopover();
+    }
+  }, true);
+  $(document).on('click', 'sup.footnote-ref a', hideFootnotePopover);
+
   // keep an open image preview fitted to the screen when the window changes size
   $(window).on('resize', function () {
     if (window.fitImagePreview) {
