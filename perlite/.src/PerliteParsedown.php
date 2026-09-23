@@ -989,9 +989,60 @@ class PerliteParsedown extends Parsedown
             $Element['attributes']['title'] = $Definition['title'];
         }
 
+        # Markdown links to notes, e.g. [text](Folder/My%20Note.md) or
+        # [![[image.png]]](Note.md#Heading), are internal links like in Obsidian:
+        # same URL, class and tab as a [[wikilink]]. The link text is still parsed
+        # normally, so an image inside the link keeps working.
+        $internal = $this->markdownLinkToInternal((string) $Element['attributes']['href']);
+        if ($internal !== null) {
+            $Element['attributes']['href'] = $internal['href'];
+            $Element['attributes']['class'] = $internal['class'];
+            $Element['attributes']['target'] = null;
+            $Element['attributes']['rel'] = null;
+        }
+
         return array(
             'extent' => $extent,
             'element' => $Element,
+        );
+    }
+
+    # Returns the internal link attributes for a markdown link target that points
+    # at a note, or null for URLs, same-page anchors and links to files.
+    protected function markdownLinkToInternal(string $href)
+    {
+        $href = trim($href);
+        if ($href === '' || $href[0] === '#' || str_starts_with($href, '//')
+            || preg_match('/^[a-z][a-z0-9+.-]*:/i', $href)) {
+            return null;
+        }
+
+        $target = rawurldecode($href);
+        $hashPos = strpos($target, '#');
+        $file = $hashPos === false ? $target : substr($target, 0, $hashPos);
+        $anchor = $hashPos === false ? '' : substr($target, $hashPos);
+
+        # notes only: ".md" or no extension. Links to files (pdf, images, ...)
+        # stay as they are. A numeric "extension" is part of a note name ("v1.5").
+        $ext = pathinfo($file, PATHINFO_EXTENSION);
+        if (strtolower($ext) === 'md') {
+            $file = substr($file, 0, -3);
+        } elseif ($ext !== '' && preg_match('/[a-z]/i', $ext)) {
+            return null;
+        }
+        if (trim($file) === '' || str_contains($file, ']') || str_contains($file, '|')) {
+            return null;
+        }
+
+        # build it exactly like a [[wikilink]] so both behave the same
+        $link = $this->inlineInternalLink(array('text' => '[[' . $file . $anchor . ']]'));
+        if ($link === null) {
+            return null;
+        }
+
+        return array(
+            'href' => $link['element']['attributes']['href'],
+            'class' => $link['element']['attributes']['class'],
         );
     }
 

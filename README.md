@@ -29,6 +29,7 @@
 - **Block IDs:** `^block-id` markers are hidden from the page.
 - **cssclasses:** `cssclasses` / `cssclass` in frontmatter is passed to the frontend.
 - **Empty tags:** empty non-void elements are output as `<div></div>` instead of `<div />`. Before, a title-only callout swallowed the rest of the page.
+- **Markdown links to notes:** `[text](Folder/My%20Note.md)` and `[![[image.png|opts]]](Note.md#Heading)` are internal links, like in Obsidian. They open in the same tab, with hover previews, built the same way as a `[[wikilink]]`. URLs (`https:`, `mailto:` …), `#anchor` links and links to files such as `.pdf` or images are unchanged. Before, these were treated as external links to the raw `.md` file, which Perlite's nginx config blocks.
 
 ### Frontend (`perlite.js`)
 - **Heading IDs:** a heading whose generated ID clashes with an existing one gets an `h-` prefix. Before, a `# Settings` heading took over `#settings` and broke the settings cogwheel.
@@ -38,6 +39,7 @@
   - Only that callout toggles, not the callouts nested inside it.
   - Links in the title still work.
 - **Image preview:** large images are scaled to fit the screen's width and height, the preview box shrinks around the image, and it refits when the window is resized.
+- **Linked images:** clicking an image inside a link follows the link instead of opening the image preview. Images without a link still open the preview.
 
 ### Styles (`perlite.css`)
 - **Collapsed callouts:** always hidden, even when the theme sets a `display` on callout content (ITS columns and cards).

@@ -212,6 +212,11 @@ function getContent(str, home = false, popHover = false, anchor = "") {
           // add Image Click popup
           $(".pop").on("click", function () {
 
+            // an image inside a link ([![[img.png]]](Note.md)) follows the link
+            if ($(this).closest("a").length) {
+              return;
+            }
+
             var path = $(this).find("img").attr("src");
             result = '<div class="modal-body imgModalBody"><img src="' + path + '" class="imagepreview"></div>';
             $("#img-content").html(result);
