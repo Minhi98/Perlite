@@ -236,34 +236,43 @@ function getContent(str, home = false, popHover = false, anchor = "") {
           }
 
           // Outlines
+          // built from the note's headings (including ones that contain links or
+          // formatting); headings inside embedded notes are left out, like Obsidian
           var toc = "";
           var level = 0;
+          var escapeHtml = function (text) {
+            return $('<div>').text(text).html().replace(/"/g, '&quot;');
+          };
 
-          document.getElementById("mdContent").innerHTML =
-            document.getElementById("mdContent").innerHTML.replace(
-              /<h([\d])>([^<]+)<\/h([\d])>/gi,
-              function (str, openLevel, titleText, closeLevel) {
+          document.querySelectorAll('#mdContent h1, #mdContent h2, #mdContent h3, #mdContent h4, #mdContent h5, #mdContent h6').forEach(function (heading) {
 
-                if (openLevel != closeLevel) {
-                  return str;
-                }
-                if (openLevel > level) {
-                  toc += (new Array(openLevel - level + 1)).join('<div class="tree-item tree-item-children">');
-                } else if (openLevel < level) {
-                  toc += (new Array(level - openLevel + 1)).join("</div>");
-                }
+            if (heading.closest('.markdown-embed')) {
+              return;
+            }
+            var titleText = heading.textContent.trim();
+            if (!titleText) {
+              return;
+            }
+            var openLevel = parseInt(heading.tagName.substring(1));
 
-                level = parseInt(openLevel);
+            if (openLevel > level) {
+              toc += (new Array(openLevel - level + 1)).join('<div class="tree-item tree-item-children">');
+            } else if (openLevel < level) {
+              toc += (new Array(level - openLevel + 1)).join("</div>");
+            }
 
-                var anchor = titleText.replace(/ /g, "_");
-                toc += '<div class="tree-item-self is-clickable toc-item"><a href="#' + anchor + '">' + titleText
-                  + '</a></div>';
+            level = openLevel;
 
-                return "<h" + openLevel + "><a name='" + anchor + "' >"
-                  + "" + "</a>" + titleText + "</h" + closeLevel + ">";
+            var anchor = titleText.replace(/ /g, "_");
+            toc += '<div class="tree-item-self is-clickable toc-item"><a href="#' + escapeHtml(anchor) + '">' + escapeHtml(titleText)
+              + '</a></div>';
 
-              }
-            );
+            if (!heading.querySelector(':scope > a[name]')) {
+              var named = document.createElement('a');
+              named.setAttribute('name', anchor);
+              heading.insertBefore(named, heading.firstChild);
+            }
+          });
 
           if (level) {
             toc += (new Array(level + 1)).join("</div></div>");
@@ -2067,12 +2076,17 @@ $(document).ready(function () {
 
   });
 
-  // links to a heading / footnote on the same page ([[#Heading]], [^1])
-  $(document).on('click', '#mdContent a[href^="#"]:not(.tag)', function (e) {
+  // links to a heading / footnote on the same page ([[#Heading]], [^1]) and
+  // outline (table of contents) links, in the sidebar or the mobile pop-up
+  $(document).on('click', '#mdContent a[href^="#"]:not(.tag), #toc a[href^="#"], #popUpContent .toc-item a[href^="#"]', function (e) {
     var hash = this.getAttribute('href');
+    var inPopup = $(this).closest('#popUpContent').length > 0;
     if (hash.length > 1 && scrollToAnchor(hash.substring(1))) {
       e.preventDefault();
       history.replaceState(history.state, '', location.pathname + location.search + hash);
+      if (inPopup) {
+        $('#popUp').css('display', 'none');
+      }
     }
   });
 
