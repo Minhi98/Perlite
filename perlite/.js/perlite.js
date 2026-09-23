@@ -685,7 +685,22 @@ function getGraphConfig() {
  * @param {Boolean} show_tags
  * @param {Boolean} sizeDepsOnConns
  */
+/**
+ * set the "Linked mentions" count in the right sidebar; the row is hidden when it is 0
+ * @param {Number} count
+ */
+function setLinkedMentionsCount(count) {
+  var flair = $('#nodeCount');
+  flair.text(count);
+  flair.closest('.tree-item-self').css('display', count > 0 ? '' : 'none');
+}
+
 function renderGraph(modal, path = "", filter_emptyNodes = false, show_tags = true, sizeDepsOnConns = false) {
+
+  // start each page at 0 (hidden) so a page without graph data never shows the previous page's count
+  if (!modal) {
+    setLinkedMentionsCount(0);
+  }
 
   // no graph found exit
   if ($("#allGraphNodes").length == 0 || $("#allGraphNodes").text == '[]') {
@@ -1005,7 +1020,7 @@ function renderGraph(modal, path = "", filter_emptyNodes = false, show_tags = tr
     };
 
     // update linked mentions
-    $("#nodeCount").text(nodes.length - 1);
+    setLinkedMentionsCount(Math.max(0, nodes.length - 1));
 
     var container = document.getElementById('mynetwork');
     network = new vis.Network(container, data, options);

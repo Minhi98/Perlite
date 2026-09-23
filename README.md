@@ -44,6 +44,7 @@
 - **Heading links:** links to a heading (`[[Page#Heading]]`, `[text](Page.md#Heading)`, `[[Page#Chapter#Section]]`, same-page `[[#Heading]]`) scroll to it. Before, the page loaded without scrolling and threw an error. The heading is found by its text (ignoring case, spaces, `-` and `_`), so all of Perlite's link formats work. Perlite scrolls again once images above the heading have loaded.
 - **Outline (table of contents):** clicking an outline link, in the sidebar or the mobile pop-up, scrolls to the heading the same way section links do and updates the URL. The mobile pop-up closes after a click. Headings that contain links or formatting are now listed, and headings inside embedded notes are left out, like Obsidian.
 - **Footnote previews:** hovering a footnote reference shows the footnote in a popover, whether page previews are on or off. It stays open while the mouse is over it, so links inside work, and closes on scroll or click. Embedded notes show their own footnotes.
+- **Linked mentions:** the "Linked mentions" row in the right sidebar is hidden when its count is 0, and resets on every page load so it never shows the previous page's count. The count needs the Metadata Extractor plugin's `metadata.json` at the vault root.
 
 ### Styles (`perlite.css`)
 - **Collapsed callouts:** always hidden, even when the theme sets a `display` on callout content (ITS columns and cards).
