@@ -21,6 +21,16 @@ class PerliteParsedown extends Parsedown
     protected $allowedFileLinkTypes;
     protected $allowedImageTypes;
 
+    # footnotes: id => raw text, and id => number in order of first reference
+    protected $footnoteDefinitions = array();
+    protected $footnoteNumbers = array();
+    protected $footnoteRefCounts = array();
+
+    # note embeds: the note being rendered (vault path, e.g. "/Folder/Note")
+    # and the chain of embeds being rendered (cycle / depth protection)
+    public $currentNote = null;
+    protected static $embedStack = array();
+
     protected $inlineMarkerList = '!"*$_#&[:<>`~\\=%';
 
     protected $InlineTypes = array(
@@ -31,7 +41,7 @@ class PerliteParsedown extends Parsedown
         ':' => array('Url'),
         '<' => array('UrlTag', 'EmailTag', 'Markup', 'SpecialCharacter'),
         '>' => array('SpecialCharacter'),
-        '[' => array('Link', 'InternalMarkdownLink', 'InternalLink'),
+        '[' => array('FootnoteMarker', 'Link', 'InternalMarkdownLink', 'InternalLink'),
         '#' => array('Tag'),
         '$' => array('Katex'),
         '_' => array('Emphasis'),
@@ -67,7 +77,7 @@ class PerliteParsedown extends Parsedown
         $this->allowedFileLinkTypes = $allowedFileLinkTypes;
         $this->allowedImageTypes = $allowedImageTypes;
 
-        $this->BlockTypes['!'] = array('YouTube');
+        $this->BlockTypes['!'] = array('NoteEmbed', 'YouTube');
 
     }
 
@@ -104,8 +114,23 @@ class PerliteParsedown extends Parsedown
             $parsedYamlBlockText = $this->yamlFrontmatter($yamlBlockText);
         }
 
+        # footnotes: pull out [^id]: definitions before block parsing
+        $lines = $this->extractFootnoteDefinitions($lines);
+
         # iterate through lines to identify blocks
         $markup = $this->lines($lines);
+
+        # append the footnotes list
+        $markup .= $this->buildFootnotesSection();
+
+        # cssclasses from front matter -> applied to the page by perlite.js
+        if (isset($yamlBlockText)) {
+            $cssClasses = $this->frontmatterCssClasses($yamlBlockText);
+            if ($cssClasses !== '') {
+                $markup = '<div class="perlite-cssclasses" style="display:none" data-cssclasses="'
+                    . self::escape($cssClasses) . '"></div>' . $markup;
+            }
+        }
 
         # add front matter
         $markup = $parsedYamlBlockText . $markup;
@@ -275,8 +300,12 @@ class PerliteParsedown extends Parsedown
 
 
             if (preg_match('/^>\s?\[\!(.*?)\](.*?)$/m', $Line['text'], $matches)) {
-                $type = strtolower($matches[1]);
-                $title = $matches[2];
+                # Obsidian syntax: [!type|meta1 meta2]  ->  type + data-callout-metadata
+                # (needed for ITS-style callouts like [!cards|3], [!infobox|left], ...)
+                $calloutParts = explode('|', $matches[1], 2);
+                $type = strtolower(trim($calloutParts[0]));
+                $metadata = isset($calloutParts[1]) ? trim($calloutParts[1]) : '';
+                $title = trim($matches[2]);
 
                 $calloutTitle = $title ?: ucfirst($type);
 
@@ -344,6 +373,7 @@ class PerliteParsedown extends Parsedown
                         'name' => 'div',
                         'attributes' => array(
                             'data-callout' => $type,
+                            'data-callout-metadata' => $metadata,
                             'class' => $calloutclass
                         ),
                         'elements' => array(
@@ -380,8 +410,9 @@ class PerliteParsedown extends Parsedown
                                     array(
                                         'name' => 'div',
                                         'attributes' => array('class' => $calloutTitleClass),
-                                        'text' => (array) $calloutTitle,
-                                        'handler' => 'lines',
+                                        # inline like Obsidian (no <p> inside the title)
+                                        'text' => trim($calloutTitle),
+                                        'handler' => 'line',
 
                                     ),
                                     # collapsible icon
@@ -741,56 +772,6 @@ class PerliteParsedown extends Parsedown
 
 
 
-        if (preg_match('/(- \[(x| )\])(.*)/', $Line['text'], $matches)) {
-
-            $text = isset($matches[3]) ? $matches[3] : '';
-            $isActive = $matches[2];
-            $checked = '';
-            if ($isActive === 'x') {
-                $checked = 'checked';
-            }
-
-
-
-            $Block = array(
-                'element' => array(
-                    'name' => 'div',
-                    'elements' => array(
-                        array(
-                            'name' => 'div',
-                            'attributes' => array(
-                                'class' => 'HyperMD-list-line HyperMD-list-line-1 HyperMD-task-line cm-line',
-                                'data-task' => $isActive,
-                            ),
-                        ),
-                        array(
-                            'name' => 'label',
-                            'attributes' => array('class' => 'task-list-label'),
-                            'elements' => array(
-                                array(
-                                    'name' => 'input',
-                                    'attributes' => array(
-                                        'class' => 'task-list-item-checkbox',
-                                        'type' => 'checkbox',
-                                        'data-task' => $isActive,
-                                        $checked => '',
-                                    ),
-                                ),
-                                array(
-                                    'name' => 'label',
-                                    'attributes' => array('class' => 'cm-widgetBuffer'),
-                                    'text' => $text,
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-            );
-
-
-            return $Block;
-        }
-
         if (preg_match('/^(' . $pattern . '[ ]+)(.*)/', $Line['text'], $matches)) {
             $Block = array(
                 'indent' => $Line['indent'],
@@ -817,65 +798,49 @@ class PerliteParsedown extends Parsedown
                 ),
             );
 
+            $this->markTaskItem($Block);
+
             $Block['element']['text'][] = &$Block['li'];
 
             return $Block;
         }
     }
 
+    # Task lists, rendered like Obsidian's reading view so themes/snippets work:
+    #   <ul class="contains-task-list">
+    #     <li class="task-list-item is-checked" data-task="?">
+    #       <input type="checkbox" class="task-list-item-checkbox" data-task="?" checked>text
+    # Any character in [ ] is supported (alternate checkboxes: [?] [!] [-] [/] ...).
+    protected function markTaskItem(array &$Block)
+    {
+        $first = $Block['li']['text'][0] ?? '';
+        if (!preg_match('/^\[(.)\](?:[ \t]|$)/u', $first, $m)) {
+            return;
+        }
+        $task = $m[1] === ' ' ? '' : $m[1];
+        $Block['li']['attributes'] = array(
+            'class' => 'task-list-item' . ($task !== '' ? ' is-checked' : ''),
+            'data-task' => $task,
+        );
+        $Block['element']['attributes']['class'] = 'contains-task-list';
+    }
+
+    protected function li($lines)
+    {
+        $checkbox = '';
+        if (isset($lines[0]) && preg_match('/^\[(.)\](?:[ \t]+|$)/u', $lines[0], $m)) {
+            $task = $m[1] === ' ' ? '' : $m[1];
+            $checkbox = '<input type="checkbox" class="task-list-item-checkbox" data-task="'
+                . self::escape($task) . '"' . ($task !== '' ? ' checked' : '') . '>';
+            $lines[0] = substr($lines[0], strlen($m[0]));
+        }
+
+        return $checkbox . parent::li($lines);
+    }
+
     protected function blockListContinue($Line, array $Block)
     {
 
-
-        if (preg_match('/(- \[(x| )\])(.*)/', $Line['text'], $matches)) {
-
-            $text = isset($matches[3]) ? $matches[3] : '';
-            $isActive = $matches[2];
-
-            $checked = '';
-            if ($isActive === 'x') {
-                $checked = 'checked';
-            }
-
-
-
-
-
-            $conBlock = array(
-                'name' => 'div',
-                'attributes' => array(
-                    'class' => 'HyperMD-list-line HyperMD-list-line-1 HyperMD-task-line cm-line',
-                    'data-task' => $isActive,
-                ),
-                'elements' => array(
-                    array(
-                        'name' => 'label',
-                        'attributes' => array('class' => 'task-list-label'),
-                        'elements' => array(
-                            array(
-                                'name' => 'input',
-                                'attributes' => array(
-                                    'class' => 'task-list-item-checkbox',
-                                    'type' => 'checkbox',
-                                    'data-task' => $isActive,
-                                    $checked => '',
-                                ),
-                            ),
-                            array(
-                                'name' => 'label',
-                                'attributes' => array('class' => 'cm-widgetBuffer'),
-                                'text' => $text,
-                            ),
-                        ),
-                    ),
-                )
-            );
-
-
-            $Block['element']['elements'][] = &$conBlock;
-
-            return $Block;
-        }
 
         $Block['indent'] = isset($Block['indent']) ? $Block['indent'] : '0';
 
@@ -900,6 +865,8 @@ class PerliteParsedown extends Parsedown
                     $text,
                 ),
             );
+
+            $this->markTaskItem($Block);
 
             $Block['element']['text'][] = &$Block['li'];
 
@@ -1081,8 +1048,12 @@ class PerliteParsedown extends Parsedown
             $markup .= '</' . $Element['name'] . '>';
         } elseif ($closing) {
             $markup .= '</' . $Element['name'] . '>';
-        } else {
+        } elseif (in_array(strtolower($Element['name']), array('area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr'), true)) {
             $markup .= ' />';
+        } else {
+            # "<div />" is not self-closing in HTML: the browser would leave the
+            # div open and swallow everything after it (e.g. a title-only callout)
+            $markup .= '></' . $Element['name'] . '>';
         }
 
         return $markup;
@@ -1449,13 +1420,16 @@ class PerliteParsedown extends Parsedown
         /* ---------- Image ---------- */
         if (in_array($ext, $this->allowedImageTypes)) {
 
-            // syntax: image.png#caption=...&size=...
-            if (str_contains($file, '#')) {
+            // Perlite syntax: image.png#caption=...&size=...
+            if (str_contains($file, '#') && str_contains(explode('#', $file, 2)[1], '=')) {
                 return $this->buildInternalImageFromFragment(
                     $file,
                     strlen($m[0])
                 );
             }
+
+            // Obsidian / ITS syntax: image.png#cap#wtiny|alt text|300
+            // (the #fragment is kept on the embed's src, where ITS reads it)
 
             // syntax: image.png|Caption|300x200|center
             return $this->buildInternalImageFromLegacy(
@@ -1467,8 +1441,43 @@ class PerliteParsedown extends Parsedown
 
     }
 
+    # External / markdown images, handled like Obsidian:
+    #   ![alt|300](url) or ![alt|300x200](url) -> width/height, alt "alt"
+    #   ![alt|options]() (empty url, used in ITS templates) -> empty image
+    protected function inlineImage($Excerpt)
+    {
+        if (preg_match('/^!\[([^\]]*)\]\(\s*\)/', $Excerpt['text'], $m)) {
+            return array(
+                'extent' => strlen($m[0]),
+                'element' => array(
+                    'name' => 'img',
+                    'attributes' => array('src' => '', 'alt' => $m[1]),
+                ),
+            );
+        }
+
+        $Inline = parent::inlineImage($Excerpt);
+        if ($Inline === null) {
+            return;
+        }
+
+        $alt = $Inline['element']['attributes']['alt'] ?? '';
+        if (preg_match('/^(.*)\|(\d+)(?:x(\d+))?$/s', $alt, $m)) {
+            $Inline['element']['attributes']['alt'] = $m[1];
+            $Inline['element']['attributes']['width'] = $m[2];
+            if (!empty($m[3])) {
+                $Inline['element']['attributes']['height'] = $m[3];
+            }
+        }
+
+        return $Inline;
+    }
+
     protected function buildInternalImage(string $file, array $attrs, int $extent)
     {
+        # "image.png#cap#right" -> file "image.png", embed src keeps the fragment
+        $linkText = $file;
+        $file = explode('#', $file, 2)[0];
         $src = rtrim($this->uriPath . $this->path, '/') . '/' . $file;
 
         $class = 'images';
@@ -1480,34 +1489,39 @@ class PerliteParsedown extends Parsedown
             $class .= ' ' . $attrs['align'];
         }
 
-        if (!empty($attrs['size']) && preg_match('/^(\d*)x(\d*)$/', $attrs['size'], $m)) {
+        # Obsidian sizes: 300 (width only) or 300x200
+        if (!empty($attrs['size']) && preg_match('/^(\d*)(?:x(\d*))?$/', $attrs['size'], $m)) {
             $width = $m[1] ?: null;
-            $height = $m[2] ?: null;
+            $height = ($m[2] ?? "") ?: null;
         }
 
+        # Same structure as Obsidian's reading view, so theme/snippet selectors
+        # (.image-embed[alt~=right], .image-embed[src*="#cap"], .image-embed > img)
+        # match:  <span class="internal-embed media-embed image-embed" src alt><img></span>
+        # It must be inline: a <p> wrapper would be nested inside the paragraph
+        # Parsedown already opened, which browsers split into separate blocks.
+        # "pop" keeps Perlite's click-to-zoom working.
         return [
             'extent' => $extent,
             'element' => [
-                'name' => 'p',
+                'name' => 'span',
+                'attributes' => array_filter([
+                    'class' => 'internal-embed media-embed image-embed is-loaded pop',
+                    'src' => $linkText,
+                    'alt' => $attrs['caption'] ?? null,
+                    'width' => $width,
+                    'height' => $height,
+                ]),
                 'elements' => [
                     [
-                        'name' => 'a',
-                        'attributes' => [
-                            'href' => '#',
-                            'class' => 'pop',
-                        ],
-                        'elements' => [
-                            [
-                                'name' => 'img',
-                                'attributes' => array_filter([
-                                    'src' => $src,
-                                    'class' => $class,
-                                    'alt' => $alt,
-                                    'width' => $width,
-                                    'height' => $height,
-                                ]),
-                            ],
-                        ],
+                        'name' => 'img',
+                        'attributes' => array_filter([
+                            'src' => $src,
+                            'class' => $class,
+                            'alt' => $alt,
+                            'width' => $width,
+                            'height' => $height,
+                        ]),
                     ],
                 ],
             ],
@@ -1542,17 +1556,383 @@ class PerliteParsedown extends Parsedown
             'align' => null,
         ];
 
+        # Like Obsidian: a size part (300 / 300x200) sets the size, all other
+        # text becomes the alt text. Themes/snippets such as ITS image
+        # adjustments style images by alt (e.g. img[alt*=right]), so the
+        # modifiers must survive into alt.
+        $altParts = array();
         foreach ($parts as $part) {
-            if (preg_match('/^\d*x\d*$/', $part)) {
+            $part = trim($part);
+            if (preg_match('/^(\d+(x\d*)?|x\d+)$/', $part)) {
                 $attrs['size'] = $part;
-            } elseif (in_array($part, ['center', 'right'], true)) {
-                $attrs['align'] = $part;
             } elseif ($part !== '') {
-                $attrs['caption'] = $part;
+                $altParts[] = $part;
+                # keep Perlite's own alignment classes working without a theme
+                if (in_array($part, ['center', 'right'], true)) {
+                    $attrs['align'] = $part;
+                }
             }
+        }
+        if ($altParts) {
+            $attrs['caption'] = implode('|', $altParts);
         }
 
         return $this->buildInternalImage($file, $attrs, $extent);
+    }
+
+    #
+    # Front matter cssclasses (Obsidian: "cssclasses" list, legacy "cssclass")
+    #   cssclasses: [a, b] | cssclasses: a, b | cssclasses:\n  - a\n  - b
+
+    protected function frontmatterCssClasses(string $yaml)
+    {
+        $classes = array();
+        $lines = explode("\n", str_replace("\r", '', $yaml));
+        for ($i = 0; $i < count($lines); $i++) {
+            if (!preg_match('/^(cssclasses|cssclass)\s*:\s*(.*)$/i', $lines[$i], $m)) {
+                continue;
+            }
+            $value = trim($m[2]);
+            if ($value === '') {
+                # block list
+                while (isset($lines[$i + 1]) && preg_match('/^\s*-\s*(.+)$/', $lines[$i + 1], $item)) {
+                    $classes[] = $item[1];
+                    $i++;
+                }
+            } else {
+                $value = trim($value, '[]');
+                foreach (preg_split('/[,\s]+/', $value) as $v) {
+                    $classes[] = $v;
+                }
+            }
+        }
+        $clean = array();
+        foreach ($classes as $c) {
+            $c = trim($c, " \t'\"");
+            if ($c !== '' && preg_match('/^[A-Za-z0-9_-]+$/', $c)) {
+                $clean[] = $c;
+            }
+        }
+        return implode(' ', array_unique($clean));
+    }
+
+    #
+    # Note embeds (transclusion), rendered like Obsidian's reading view:
+    #   ![[Note]]  ![[Note#Heading]]  ![[Note#^block-id]]  ![[Note|clean no-title]]
+    # Only notes Perlite already serves ($avFiles) can be embedded, so hidden
+    # folders stay hidden. Only whole-line embeds (a line with just the embed).
+
+    protected function blockNoteEmbed($Line)
+    {
+        if (!preg_match('/^!\[\[([^\]]+)\]\]\s*$/', $Line['text'], $m)) {
+            return;
+        }
+
+        $parts = explode('|', $m[1]);
+        $target = trim(array_shift($parts));
+        $alt = trim(implode('|', $parts));
+
+        $hashPos = strpos($target, '#');
+        $file = $hashPos === false ? $target : substr($target, 0, $hashPos);
+        $sub = $hashPos === false ? '' : substr($target, $hashPos + 1);
+
+        # images, pdf, video ... are handled by the inline embed code
+        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+        $mediaTypes = array_merge($this->allowedImageTypes, $this->allowedFileLinkTypes,
+            array('pdf', 'mp4', 'm4a', 'webm', 'mp3', 'wav', 'ogg', 'mov'));
+        if ($ext !== '' && in_array($ext, $mediaTypes, true)) {
+            return;
+        }
+
+        $html = $this->renderNoteEmbed($file, $sub, $target, $alt);
+        if ($html === null) {
+            return;
+        }
+
+        return array('markup' => $html);
+    }
+
+    protected function currentNotePath()
+    {
+        global $cleanFile;
+        if ($this->currentNote !== null) {
+            return $this->currentNote;
+        }
+        return is_string($cleanFile ?? null) ? $cleanFile : '';
+    }
+
+    protected static function normalizeVaultPath(string $path)
+    {
+        $out = array();
+        foreach (explode('/', $path) as $seg) {
+            if ($seg === '' || $seg === '.') {
+                continue;
+            }
+            if ($seg === '..') {
+                array_pop($out);
+                continue;
+            }
+            $out[] = $seg;
+        }
+        return '/' . implode('/', $out);
+    }
+
+    # resolve like Obsidian: relative to the current note, from the vault
+    # root, then by file name anywhere in the vault (shortest path wins)
+    protected function resolveNote(string $file)
+    {
+        global $avFiles;
+        if (!is_array($avFiles)) {
+            return null;
+        }
+
+        $current = $this->currentNotePath();
+        $file = preg_replace('/\.md$/i', '', trim($file));
+        if ($file === '') {
+            return in_array($current, $avFiles, true) ? $current : null;
+        }
+
+        $dir = ($current !== '' && strrpos($current, '/') !== false) ? substr($current, 0, strrpos($current, '/')) : '';
+        foreach (array($dir . '/' . $file, '/' . $file) as $candidate) {
+            $candidate = self::normalizeVaultPath($candidate);
+            if (in_array($candidate, $avFiles, true)) {
+                return $candidate;
+            }
+        }
+
+        $suffix = strtolower('/' . ltrim(self::normalizeVaultPath($file), '/'));
+        $best = null;
+        foreach ($avFiles as $f) {
+            if (substr(strtolower($f), -strlen($suffix)) === $suffix && ($best === null || strlen($f) < strlen($best))) {
+                $best = $f;
+            }
+        }
+        return $best;
+    }
+
+    protected function extractNoteSection(string $md, string $sub)
+    {
+        # drop front matter
+        $md = preg_replace('/\A---\r?\n.*?\r?\n---\s*(\r?\n|\z)/s', '', str_replace("\r\n", "\n", $md));
+        if ($sub === '') {
+            return $md;
+        }
+
+        $subs = explode('#', $sub);
+        $want = trim(end($subs));
+        $lines = explode("\n", $md);
+
+        # block reference: ![[Note#^id]]
+        if (substr($want, 0, 1) === '^') {
+            $id = preg_quote(substr($want, 1), '/');
+            foreach ($lines as $i => $line) {
+                if (!preg_match('/\s\^' . $id . '\s*$/', $line)) {
+                    continue;
+                }
+                $start = $i;
+                $end = $i;
+                if (!preg_match('/^\s*([-*+]|\d+\.)\s/', $line)) {
+                    while ($start > 0 && trim($lines[$start - 1]) !== '') {
+                        $start--;
+                    }
+                }
+                $block = array_slice($lines, $start, $end - $start + 1);
+                $block[count($block) - 1] = preg_replace('/\s\^' . $id . '\s*$/', '', $block[count($block) - 1]);
+                return implode("\n", $block);
+            }
+            return null;
+        }
+
+        # heading: from the heading to the next heading of the same or higher level
+        $inFence = false;
+        $level = null;
+        $out = array();
+        foreach ($lines as $line) {
+            if (preg_match('/^\s*(```|~~~)/', $line)) {
+                $inFence = !$inFence;
+            }
+            $isHeading = !$inFence && preg_match('/^(#{1,6})\s+(.*?)\s*#*\s*$/', $line, $h);
+            if ($level === null) {
+                if ($isHeading && strcasecmp(trim($h[2]), $want) === 0) {
+                    $level = strlen($h[1]);
+                    $out[] = $line;
+                }
+                continue;
+            }
+            if ($isHeading && strlen($h[1]) <= $level) {
+                break;
+            }
+            $out[] = $line;
+        }
+        return $level === null ? null : implode("\n", $out);
+    }
+
+    protected function renderNoteEmbed(string $file, string $sub, string $target, string $alt)
+    {
+        global $rootDir, $startDir, $absolutePath;
+
+        $note = $this->resolveNote($file);
+        if ($note === null) {
+            return null; # unknown note: fall back to Perlite's normal link
+        }
+
+        $key = $note . '#' . $sub;
+        if (in_array($key, self::$embedStack, true) || count(self::$embedStack) >= 4) {
+            return null;
+        }
+
+        $mdFile = $rootDir . $note . '.md';
+        if (!is_file($mdFile)) {
+            return null;
+        }
+        $md = $this->extractNoteSection((string) file_get_contents($mdFile), $sub);
+        if ($md === null) {
+            return null;
+        }
+
+        # render the embedded note with its own folder for relative links/images
+        $noteDir = substr($note, 0, (int) strrpos($note, '/'));
+        $path = !empty($absolutePath) ? $startDir : $startDir . $noteDir;
+        $Parser = new static($path, $this->uriPath, $this->niceLinks, $this->allowedFileLinkTypes, $this->allowedImageTypes);
+        $Parser->setSafeMode($this->safeMode);
+        $Parser->setBreaksEnabled($this->breaksEnabled);
+        $Parser->currentNote = $note;
+
+        self::$embedStack[] = $key;
+        try {
+            $inner = $Parser->text($md);
+        } finally {
+            array_pop(self::$embedStack);
+        }
+
+        # link to the note, same URL format as Perlite's internal links
+        $urlPath = ltrim($note, '/');
+        $urlPath = str_replace('~', '%80', $urlPath);
+        $urlPath = str_replace('-', '~', $urlPath);
+        $urlPath = str_replace(' ', '-', $urlPath);
+        $href = $this->uriPath . $urlPath . ($sub !== '' ? '#' . str_replace(' ', '_', ltrim(basename(str_replace('#', '/', $sub)), '^')) : '');
+
+        $title = basename($note);
+
+        return '<div class="internal-embed markdown-embed inline-embed is-loaded" src="' . self::escape($target) . '"'
+            . ($alt !== '' ? ' alt="' . self::escape($alt) . '"' : '') . '>'
+            . '<div class="embed-title markdown-embed-title">' . self::escape($title) . '</div>'
+            . '<div class="markdown-embed-content"><div class="markdown-preview-view markdown-rendered">'
+            . '<div class="markdown-preview-sizer markdown-preview-section">' . "\n" . $inner . "\n" . '</div></div></div>'
+            . '<a class="markdown-embed-link internal-link" href="' . self::escape($href) . '" aria-label="Open link">'
+            . '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-link"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>'
+            . '</a></div>';
+    }
+
+    #
+    # Footnotes (Obsidian / markdown-it style)
+    #   reference:  text[^1]  or  text[^my-note]
+    #   definition: [^1]: footnote text   (indented following lines continue it)
+
+    protected function extractFootnoteDefinitions(array $lines)
+    {
+        $this->footnoteDefinitions = array();
+        $this->footnoteNumbers = array();
+        $this->footnoteRefCounts = array();
+
+        $out = array();
+        $inFence = false;
+        $current = null;
+
+        foreach ($lines as $line) {
+            # don't touch anything inside fenced code blocks
+            if (preg_match('/^\s*(```|~~~)/', $line)) {
+                $inFence = !$inFence;
+                $current = null;
+                $out[] = $line;
+                continue;
+            }
+
+            if (!$inFence && preg_match('/^\[\^([^\]\s]+)\]:[ \t]?(.*)$/', $line, $m)) {
+                $current = $m[1];
+                $this->footnoteDefinitions[$current] = $m[2];
+                continue;
+            }
+
+            # indented continuation lines belong to the previous definition
+            if ($current !== null && preg_match('/^(?: {4}|\t)(.*)$/', $line, $m)) {
+                $this->footnoteDefinitions[$current] .= "\n" . $m[1];
+                continue;
+            }
+
+            $current = null;
+            # hide Obsidian block ids ("text ^my-block"), like Obsidian's reading view
+            if (!$inFence) {
+                $line = preg_replace('/(\S)[ \t]+\^[A-Za-z0-9-]+[ \t]*$/', '$1', $line);
+            }
+            $out[] = $line;
+        }
+
+        return $out;
+    }
+
+    protected function inlineFootnoteMarker($Excerpt)
+    {
+        if (!preg_match('/^\[\^([^\]\s]+)\]/', $Excerpt['text'], $m)) {
+            return;
+        }
+
+        $id = $m[1];
+
+        # like Obsidian, leave [^x] as plain text if it has no definition
+        if (!isset($this->footnoteDefinitions[$id])) {
+            return;
+        }
+
+        if (!isset($this->footnoteNumbers[$id])) {
+            $this->footnoteNumbers[$id] = count($this->footnoteNumbers) + 1;
+            $this->footnoteRefCounts[$id] = 0;
+        }
+        $this->footnoteRefCounts[$id]++;
+
+        $num = $this->footnoteNumbers[$id];
+        $refId = 'fnref-' . $num . ($this->footnoteRefCounts[$id] > 1 ? '-' . $this->footnoteRefCounts[$id] : '');
+
+        return array(
+            'extent' => strlen($m[0]),
+            'markup' => '<sup class="footnote-ref" id="' . $refId . '" data-footnote-id="' . $refId . '">'
+                . '<a href="#fn-' . $num . '" class="footnote-link">[' . $num . ']</a></sup>',
+        );
+    }
+
+    protected function buildFootnotesSection()
+    {
+        if (empty($this->footnoteDefinitions)) {
+            return '';
+        }
+
+        # referenced footnotes in reference order, then any unreferenced ones
+        $ordered = $this->footnoteNumbers;
+        asort($ordered);
+        foreach (array_keys($this->footnoteDefinitions) as $id) {
+            if (!isset($ordered[$id])) {
+                $ordered[$id] = null;
+            }
+        }
+
+        $items = '';
+        foreach ($ordered as $id => $num) {
+            $text = $this->line(trim($this->footnoteDefinitions[$id]));
+            if ($num === null) {
+                $items .= "<li class=\"footnote-item\"><p>" . $text . "</p></li>\n";
+                continue;
+            }
+            $backrefs = '';
+            for ($i = 1; $i <= $this->footnoteRefCounts[$id]; $i++) {
+                $refId = 'fnref-' . $num . ($i > 1 ? '-' . $i : '');
+                $backrefs .= ' <a href="#' . $refId . '" class="footnote-backref footnote-link">↩︎</a>';
+            }
+            $items .= '<li id="fn-' . $num . '" class="footnote-item" data-footnote-id="fn-' . $num . '"><p>'
+                . $text . $backrefs . "</p></li>\n";
+        }
+
+        return "\n<section class=\"footnotes\">\n<hr class=\"footnotes-sep\">\n<ol class=\"footnotes-list\">\n"
+            . $items . "</ol>\n</section>";
     }
 
     protected function popupIconSvg()

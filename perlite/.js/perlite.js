@@ -139,6 +139,12 @@ function getContent(str, home = false, popHover = false, anchor = "") {
           // set content
           $("#mdContent").html(result);
 
+          // cssclasses from the note's front matter -> page container (like Obsidian)
+          var previewView = $("#mdContent").closest(".markdown-preview-view");
+          previewView.removeClass(previewView.data("perliteCssclasses") || "");
+          var noteClasses = $("#mdContent > .perlite-cssclasses").data("cssclasses") || "";
+          previewView.addClass(noteClasses).data("perliteCssclasses", noteClasses);
+
           // set word and char count
           $("#wordCount").text($(".wordCount").text() + ' words');
           $("#charCount").text($(".charCount").text() + ' characters');
@@ -216,6 +222,27 @@ function getContent(str, home = false, popHover = false, anchor = "") {
             $(".img-modal-title").text("Image preview");
             $("#img-modal").css("display", "flex");
 
+            // fit the preview to the screen (CSS limits width and height), then
+            // pin that width so the dialog shrinks around the image
+            var previewImg = $("#img-content img.imagepreview")[0];
+            if (previewImg) {
+              window.fitImagePreview = function () {
+                if (!previewImg.isConnected || $("#img-modal").css("display") === "none") {
+                  return;
+                }
+                previewImg.style.width = "";
+                var fittedWidth = previewImg.getBoundingClientRect().width;
+                if (fittedWidth) {
+                  previewImg.style.width = fittedWidth + "px";
+                }
+              };
+              if (previewImg.complete) {
+                window.fitImagePreview();
+              } else {
+                previewImg.onload = window.fitImagePreview;
+              }
+            }
+
           });
 
 
@@ -289,39 +316,22 @@ function getContent(str, home = false, popHover = false, anchor = "") {
           });
 
           // Toogle Collapsable Callout Container
-          $('.callout-fold').on('click', function (e) {
+          // (whole title bar toggles like Obsidian; only this callout, not nested ones)
+          $('.callout.is-collapsible > .callout-title').off('click.perliteCallout').on('click.perliteCallout', function (e) {
 
+            // let links inside the title work normally
+            if ($(e.target).closest('a').length) {
+              return;
+            }
             e.preventDefault();
             e.stopPropagation();
-            target = $(e.target);
 
-            for (let i = 0; i < 5; i++) {
-              if (target.is('.callout', 'is-collapsible')) {
-                break;
-              }
-              target = target.parent()
-            }
+            var callout = $(this).parent();
+            var collapsed = !callout.hasClass('is-collapsed');
 
-            calloutContent = target.find('.callout-content')
-            calloutIcon = target.find('.callout-fold')
-
-            if (calloutContent.hasClass('is-collapsed-callout')) {
-              calloutContent.removeClass('is-collapsed-callout');
-            } else {
-              calloutContent.addClass('is-collapsed-callout');
-            }
-
-            if (calloutIcon.hasClass('is-collapsed')) {
-              calloutIcon.removeClass('is-collapsed');
-            } else {
-              calloutIcon.addClass('is-collapsed');
-            }
-
-            if (target.hasClass('is-collapsed')) {
-              target.removeClass('is-collapsed');
-            } else {
-              target.addClass('is-collapsed');
-            }
+            callout.toggleClass('is-collapsed', collapsed);
+            callout.children('.callout-content').toggleClass('is-collapsed-callout', collapsed);
+            $(this).children('.callout-fold').toggleClass('is-collapsed', collapsed);
 
           });
 
@@ -468,11 +478,20 @@ function getContent(str, home = false, popHover = false, anchor = "") {
         
         // Ensure each heading has an ID (generate one if missing)
         if (!heading.id) {
-          heading.id = heading.textContent
+          let headingId = heading.textContent
             .trim()
             .toLowerCase()
             .replace(/\s+/g, "-")
             .replace(/[^\w-]/g, "");
+          // don't reuse an id that already exists (e.g. a "Settings" heading
+          // would hijack the #settings modal and break the cogwheel)
+          if (headingId && document.getElementById(headingId)) {
+            headingId = "h-" + headingId;
+            let n = 2;
+            while (document.getElementById(headingId + (n > 2 ? "-" + (n - 1) : ""))) n++;
+            if (n > 2) headingId += "-" + (n - 1);
+          }
+          heading.id = headingId;
         }
 
         // Create the copy icon
@@ -1965,6 +1984,13 @@ $(document).ready(function () {
 
   });
 
+  // keep an open image preview fitted to the screen when the window changes size
+  $(window).on('resize', function () {
+    if (window.fitImagePreview) {
+      window.fitImagePreview();
+    }
+  });
+
   // setting modal
   $('.clickable-icon.side-dock-ribbon-action[aria-label="Settings"]').click(function (e) {
 
@@ -2080,4 +2106,3 @@ $(document).ready(function () {
   });
 
 });
-

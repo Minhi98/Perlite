@@ -51,7 +51,7 @@ if (empty($siteType))
 if (empty($siteImage))
 	$siteImage = empty(getenv('SITE_IMAGE')) ? 'https://raw.githubusercontent.com/secure-77/Perlite/main/screenshots/screenshot.png' : getenv('SITE_IMAGE');
 if (!isset($siteURL))
-	$siteURL = empty(getenv('SITE_URL')) ? 'https://perlite.secure77.de' : getenv('SITE_URL');
+	$siteURL = empty(getenv('SITE_URL')) ? '' : getenv('SITE_URL');  // optional, no demo-site fallback
 if (empty($siteLogo))
 	$siteLogo = getenv("SITE_LOGO");
 if (empty($siteDescription))
@@ -59,7 +59,7 @@ if (empty($siteDescription))
 if (empty($siteName))
 	$siteName = empty(getenv('SITE_NAME')) ? 'Perlite Demo' : getenv('SITE_NAME');
 if (empty($siteHomepage))
-	$siteHomepage = empty(getenv("SITE_HOMEPAGE")) ? $siteURL : getenv("SITE_HOMEPAGE");
+	$siteHomepage = empty(getenv("SITE_HOMEPAGE")) ? $siteURL : getenv("SITE_HOMEPAGE");  // empty = no homepage icon
 if (empty($siteGithub))
 	$siteGithub = getenv("SITE_GITHUB");
 if (!isset($siteTwitter))
@@ -147,12 +147,17 @@ if ($siteLogo and empty($customSection)) {
 										  </li>';
 	}
 
-	$customSection = $customSection . '
+	// homepage icon only when SITE_HOMEPAGE or SITE_URL is set (like Github/X)
+	if (!empty($siteHomepage)) {
+		$customSection = $customSection . '
 						                  <li>
 	                                        <a href="' . $siteHomepage . '">
 									          <img class="social-logo" src="' . $uriPath . '.styles/fontawesome-color.svg" alt="Homepage Logo">
 									        </a>
-									      </li>
+									      </li>';
+	}
+
+	$customSection = $customSection . '
 					                    </ul>';
 
 	$customSection = $customSection . '
@@ -727,6 +732,7 @@ function loadSettings($rootDir)
 	$folders = glob($rootDir . '/.obsidian/themes/*');
 	$appearanceFile = $rootDir . '/.obsidian/appearance.json';
 	$defaultTheme = "";
+	$enabledSnippets = array();
 
 	if (is_file($appearanceFile)) {
 		$jsonData = file_get_contents($appearanceFile);
@@ -737,6 +743,11 @@ function loadSettings($rootDir)
 				// if theme is set, set it as default
 				if (array_key_exists('cssTheme', $json_obj)) {
 					$defaultTheme = $json_obj["cssTheme"];
+				}
+
+				// CSS snippets enabled in Obsidian (Settings > Appearance > CSS snippets)
+				if (isset($json_obj['enabledCssSnippets']) && is_array($json_obj['enabledCssSnippets'])) {
+					$enabledSnippets = $json_obj['enabledCssSnippets'];
 				}
 			}
 		}
@@ -762,6 +773,23 @@ function loadSettings($rootDir)
 		}
 	}
 
+	// load enabled snippets from <vault>/.obsidian/snippets/<name>.css,
+	// after the themes so they apply on top (same as Obsidian)
+	foreach ($enabledSnippets as $snippet) {
+		if (!is_string($snippet)) {
+			continue;
+		}
+		$snippetName = basename($snippet);
+		$snippetFile = $rootDir . '/.obsidian/snippets/' . $snippetName . '.css';
+		if (!is_file($snippetFile)) {
+			continue;
+		}
+		// ?v=<modified time> so browsers pick up edited snippets
+		$snippetHref = $uriPath . $rootDir . '/.obsidian/snippets/' . rawurlencode($snippetName) . '.css?v=' . filemtime($snippetFile);
+		$themes .= '<link class="css-snippet" data-snippet="' . htmlspecialchars($snippetName) . '" href="' . htmlspecialchars($snippetHref) . '" type="text/css" rel="stylesheet">
+	';
+	}
+
 	// default settings
 	$defaultSettings = '<link id="disablePopHovers" data-option="' . ($disablePopHovers ? 'true' : 'false') . '">';
 	$defaultSettings .= '<link id="showTOC" data-option="' . ($showTOC ? 'true' : 'false') . '">';
@@ -778,8 +806,8 @@ function loadSettings($rootDir)
     <meta property="og:title" content="' . $siteTitle . '">
     <meta property="og:type" content="' . $siteType . '" />
     <meta property="og:image" content="' . $siteImage . '">
-    <meta property="og:url" content="' . $siteURL . '">
-    <meta name="twitter:card" content="summary_large_image">
+' . (empty($siteURL) ? '' : '    <meta property="og:url" content="' . $siteURL . '">
+') . '    <meta name="twitter:card" content="summary_large_image">
 
     <!--  Non-Essential, But Recommended -->
     <meta property="og:description" content="' . $siteDescription . '">
