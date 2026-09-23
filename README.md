@@ -56,6 +56,9 @@
 - **CSS snippets:** the snippets enabled in the vault (`.obsidian/appearance.json` → `enabledCssSnippets`) are loaded from `.obsidian/snippets/`, after the theme.
 - **`SITE_URL` is optional:** when both `SITE_URL` and `SITE_HOMEPAGE` are empty, the homepage icon and the `og:url` tag are left out, instead of falling back to the Perlite demo site.
 
+### Page layout (`index.php`)
+- **Reading view markup:** the content pane is marked `data-mode="preview"` (reading view) instead of `source`, and the page title sits in `.mod-header.mod-ui`, like Obsidian's reading view. Themes that style the reading-view title now apply (e.g. a title background that fits the text instead of spanning the page).
+
 # Perlite
   
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/secure-77/perlite) ![GitHub](https://img.shields.io/github/license/secure-77/perlite) ![GitHub last commit](https://img.shields.io/github/last-commit/secure-77/Perlite)

@@ -341,7 +341,7 @@ $jsonGraphData = getfullGraph($rootDir);
                     <div class="workspace-tab-container">
                         <div class="workspace-leaf mod-active">
                             <hr class="workspace-leaf-resize-handle">
-                            <div class="workspace-leaf-content" data-type="markdown" data-mode="source">
+                            <div class="workspace-leaf-content" data-type="markdown" data-mode="preview">
                                 <div class="view-header">
 
                                     <div class="view-actions mobile-display" style="display: flex">
@@ -589,7 +589,10 @@ $jsonGraphData = getfullGraph($rootDir);
                                                 style="padding-bottom: 200px; min-height: 500px;">
                                                 <div class="markdown-preview-pusher"
                                                     style="width: 1px; height: 0.1px; margin-bottom: 0px;"></div>
-                                                <div class="inline-title" tabindex="-1" enterkeyhint="done"></div>
+                                                <!-- page title in the same place as Obsidian's reading view, so themes styling it apply -->
+                                                <div class="mod-header mod-ui">
+                                                    <div class="inline-title" tabindex="-1" enterkeyhint="done"></div>
+                                                </div>
                                                 <div id="mdContent"></div>
                                                 <div class="graph-controls is-close">
                                                     <div class="clickable-icon graph-controls-button mod-close"
