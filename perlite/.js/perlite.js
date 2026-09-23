@@ -96,9 +96,72 @@ function slugURL(targetPath) {
  * scroll to anchor
  * @param {String} aid
  */
-function scrollToAnchor(aid) {
-  var aTag = $("a[name='" + aid + "']");
-  $('html,body,div').animate({ scrollTop: aTag.offset().top }, 'slow');
+function scrollToAnchor(aid, instant) {
+  var target = findAnchorTarget(aid);
+  if (!target) {
+    return false;
+  }
+  target.scrollIntoView({ behavior: instant ? 'auto' : 'smooth', block: 'start' });
+  return true;
+}
+
+/**
+ * find the element a #hash points to in the note: an exact id / name first
+ * (footnotes, copied heading links), then a heading whose text matches.
+ * Heading matching ignores case, spaces, "-" and "_" (links use "My-Header",
+ * the outline uses "My_Header", copied links "my-header", Obsidian "My%20Header").
+ * @param {String} aid
+ */
+function normalizeAnchor(text) {
+  return text.replace(/[\s_-]+/g, ' ').trim().toLowerCase();
+}
+
+function looseAnchor(text) {
+  return normalizeAnchor(text).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim();
+}
+
+function findAnchorTarget(aid) {
+  var raw = String(aid || '').replace(/^#/, '');
+  try {
+    raw = decodeURIComponent(raw);
+  } catch (e) { }
+  var root = document.getElementById('mdContent');
+  if (!raw || !root) {
+    return null;
+  }
+  // nested heading links ([[Page#Chapter#Section]]) go to the last heading
+  if (raw.indexOf('#') !== -1 && !document.getElementById(raw)) {
+    raw = raw.split('#').filter(Boolean).pop() || raw;
+  }
+
+  var byId = document.getElementById(raw);
+  if (byId && root.contains(byId)) {
+    return byId;
+  }
+  var named = Array.from(root.querySelectorAll('a[name]')).find(function (a) {
+    return a.getAttribute('name') === raw;
+  });
+  if (named) {
+    return named.closest('h1, h2, h3, h4, h5, h6') || named;
+  }
+
+  // headings of this note first, then ones inside embedded notes
+  var headings = Array.from(root.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+  headings.sort(function (a, b) {
+    return (a.closest('.markdown-embed') ? 1 : 0) - (b.closest('.markdown-embed') ? 1 : 0);
+  });
+  var headingText = function (h) {
+    var copy = h.cloneNode(true);
+    copy.querySelectorAll('.copy-icon').forEach(function (c) { c.remove(); });
+    return copy.textContent;
+  };
+  var want = normalizeAnchor(raw);
+  var match = headings.find(function (h) { return normalizeAnchor(headingText(h)) === want; });
+  if (!match) {
+    want = looseAnchor(raw);
+    match = want ? headings.find(function (h) { return looseAnchor(headingText(h)) === want; }) : null;
+  }
+  return match || null;
 }
 
 
@@ -566,8 +629,23 @@ function getContent(str, home = false, popHover = false, anchor = "") {
 
         //scroll to anchor
 
-        if (anchor != "") {
-          scrollToAnchor(anchor.substring(1));
+        if (anchor != "" && popHover == false) {
+          var anchorId = anchor.substring(1);
+          scrollToAnchor(anchorId);
+
+          // images above the heading can finish loading later and push it down:
+          // scroll again once they have loaded (for up to 3 seconds)
+          var pendingImages = $('#mdContent img').filter(function () { return !this.complete; });
+          if (pendingImages.length) {
+            var waitUntil = Date.now() + 3000;
+            var remaining = pendingImages.length;
+            pendingImages.one('load error', function () {
+              remaining--;
+              if (remaining === 0 && Date.now() < waitUntil) {
+                scrollToAnchor(anchorId, true);
+              }
+            });
+          }
         }
 
 
@@ -1987,6 +2065,15 @@ $(document).ready(function () {
       }
     });
 
+  });
+
+  // links to a heading / footnote on the same page ([[#Heading]], [^1])
+  $(document).on('click', '#mdContent a[href^="#"]:not(.tag)', function (e) {
+    var hash = this.getAttribute('href');
+    if (hash.length > 1 && scrollToAnchor(hash.substring(1))) {
+      e.preventDefault();
+      history.replaceState(history.state, '', location.pathname + location.search + hash);
+    }
   });
 
   // keep an open image preview fitted to the screen when the window changes size

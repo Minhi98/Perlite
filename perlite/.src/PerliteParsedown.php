@@ -1324,6 +1324,25 @@ class PerliteParsedown extends Parsedown
             $linkText = $segments[0];
         }
 
+        // a heading on the page being viewed, written with the page's own name
+        // ([[This Page#Heading]]): same as [[#Heading]], scroll within the page
+        $samePageHeading = false;
+        if (str_contains($linkFile, '#') && !str_starts_with($linkFile, '#') && $this->linksToCurrentPage(explode('#', $linkFile, 2)[0])) {
+            $samePageHeading = true;
+            $linkFile = substr($linkFile, strpos($linkFile, '#'));
+            $raw = $linkFile;
+        }
+
+        // without an alias, show heading links like Obsidian:
+        // [[Page#Heading]] -> "Page > Heading"; same page -> just "Heading"
+        if (!isset($parts[1]) && str_contains($linkText, '#')) {
+            if ($samePageHeading) {
+                $linkText = substr($linkText, strpos($linkText, '#'));
+            }
+            $pieces = array_values(array_filter(array_map('trim', explode('#', $linkText)), 'strlen'));
+            $linkText = implode(' > ', $pieces);
+        }
+
 
         if ($openNewTab == false) {
             $segments = explode('/', $path);
@@ -1342,7 +1361,8 @@ class PerliteParsedown extends Parsedown
                     'name' => 'a',
                     'text' => $linkText,
                     'attributes' => array(
-                        'href' => '#' . ltrim($raw, '#'),
+                        # only the heading part: [[#Heading|alias]] -> #Heading
+                        'href' => '#' . str_replace(' ', '-', ltrim($linkFile, '#')),
                         'class' => 'internal-link' . $popupClass,
                     ),
                 ),
@@ -1710,6 +1730,27 @@ class PerliteParsedown extends Parsedown
             return $this->currentNote;
         }
         return is_string($cleanFile ?? null) ? $cleanFile : '';
+    }
+
+    # does a link's page part ("Page", "Folder/Page", "Page.md") point at the
+    # note being viewed? Not inside embedded notes, where "this page" is a
+    # different note than the one on screen.
+    protected function linksToCurrentPage(string $page)
+    {
+        if ($this->currentNote !== null) {
+            return false;
+        }
+        $current = $this->currentNotePath();
+        $page = preg_replace('/\.md$/i', '', trim($page));
+        if ($current === '' || $page === '') {
+            return false;
+        }
+        if (str_contains($page, '/')) {
+            $dir = substr($current, 0, (int) strrpos($current, '/'));
+            return strcasecmp(self::normalizeVaultPath($dir . '/' . $page), $current) === 0
+                || strcasecmp(self::normalizeVaultPath('/' . $page), $current) === 0;
+        }
+        return strcasecmp($page, basename($current)) === 0;
     }
 
     protected static function normalizeVaultPath(string $path)
