@@ -303,3 +303,18 @@ h6:hover .copy-icon {
 .perlite-footnote-popover p {
   margin: 0;
 }
+
+/* hide redundant buttons:
+   - Help (about) button in the left ribbon
+   - text settings cog at the top right of the note (font size is also in Settings)
+   - the book button in the note header that toggles the left ribbon, on desktop
+     only: on phones it is how the ribbon (file explorer, search ...) is opened */
+.side-dock-ribbon-action[aria-label="Help"],
+#mdContent ~ .graph-controls {
+  display: none !important;
+}
+@media (min-width: 990px) {
+  .view-actions.mobile-display > .sidebar-toggle-button.mod-left.mobile-display {
+    display: none !important;
+  }
+}

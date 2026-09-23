@@ -223,6 +223,7 @@ function getContent(str, home = false, popHover = false, anchor = "") {
 
             //hrefTitle = '<a href=?link=' + encodeURIComponent(title) + '>' + title + '</a>'
             title = title.substring(1)
+            var notePath = title; // full path in the vault, e.g. "Settings/The City/index"
             titleElements = title.split('/')
             title = titleElements.splice(-1)
             parentTitle = titleElements.join(' / ')
@@ -235,9 +236,10 @@ function getContent(str, home = false, popHover = false, anchor = "") {
 
             $("title").text(title + ' - ' + $("p.vault").text() + ' - ' + $("p.perliteTitle").text());
 
-            // set edit button url
+            // set edit button url: the full path, not just the file name, so notes
+            // with the same name (e.g. several index.md) open the right one
             $('.clickable-icon.view-action[aria-label="Click to edit"]')
-              .attr("href", "obsidian://open?vault=" + encodeURIComponent($("p.vault").text()) + "&file=" + encodeURIComponent(title))
+              .attr("href", "obsidian://open?vault=" + encodeURIComponent($("p.vault").text()) + "&file=" + encodeURIComponent(notePath))
           }
 
           // Outlines

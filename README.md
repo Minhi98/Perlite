@@ -47,6 +47,7 @@
 - **Footnote previews:** hovering a footnote reference shows the footnote in a popover, whether page previews are on or off. It stays open while the mouse is over it, so links inside work, and closes on scroll or click. Embedded notes show their own footnotes.
 - **Linked mentions:** the "Linked mentions" row in the right sidebar is hidden when its count is 0, and resets on every page load so it never shows the previous page's count. The count needs the Metadata Extractor plugin's `metadata.json` at the vault root.
 - **Trailing slash:** page URLs ending in `/` (e.g. `/Folder/Note/`) open the page instead of a blank one.
+- **Edit in Obsidian:** the edit button sends the note's full path (`file=Folder/Note`), so notes with the same name (e.g. several `index.md`) open the right one.
 
 ### Styles (`perlite.css`)
 - **Collapsed callouts:** always hidden, even when the theme sets a `display` on callout content (ITS columns and cards).
@@ -55,6 +56,7 @@
 - **Image preview:** styles for the fit-to-screen preview.
 - **External Link Icon Removal (Images Only):** Removed external-link icons from image links like `[![[_imgs/the_city/the_city_pretty.webp|sban hsmall]]](The%20City/index.md)`
 - **Vault box hidden:** the vault name box and the Expand/Collapse all buttons above the file tree are hidden. Perlite serves a single vault, so the vault "switcher" did nothing.
+- **Hidden buttons:** the Help button and the note's text-settings cog are hidden. The header's book button, which toggles the left ribbon, is hidden on desktop and kept on phones, where it opens the ribbon.
 
 ### Site setup (`helper.php`)
 - **CSS snippets:** the snippets enabled in the vault (`.obsidian/appearance.json` → `enabledCssSnippets`) are loaded from `.obsidian/snippets/`, after the theme.
