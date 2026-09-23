@@ -318,3 +318,10 @@ h6:hover .copy-icon {
     display: none !important;
   }
 }
+
+/* sidebars collapsed on the last visit stay hidden until perlite.js restores them
+   (avoids a one-frame flash of the open sidebar on page load) */
+html.perlite-restore-left-collapsed .workspace-split.mod-left-split,
+html.perlite-restore-right-collapsed .workspace-split.mod-right-split {
+  display: none !important;
+}

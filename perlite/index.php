@@ -26,6 +26,15 @@ $jsonGraphData = getfullGraph($rootDir);
 -->
 
 <head>
+    <!-- keep sidebars the user collapsed hidden from the first frame (restored by perlite.js) -->
+    <script>
+        try {
+            if (window.innerWidth >= 990) {
+                if (localStorage.getItem('leftSidebarCollapsed') === 'true') document.documentElement.classList.add('perlite-restore-left-collapsed');
+                if (localStorage.getItem('rightSidebarCollapsed') === 'true') document.documentElement.classList.add('perlite-restore-right-collapsed');
+            }
+        } catch (e) { }
+    </script>
     <meta charset="utf-8">
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">

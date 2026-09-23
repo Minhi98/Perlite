@@ -693,6 +693,42 @@ function getGraphConfig() {
  * @param {Boolean} sizeDepsOnConns
  */
 /**
+ * remember whether the left / right sidebar is collapsed (per browser, localStorage)
+ * @param {String} side "left" or "right"
+ */
+var sidebarDesktopWidth = 990; // same breakpoint Perlite uses for its mobile layout
+
+function sidebarToggle(side) {
+  return side === 'left' ? $('.sidebar-toggle-button.mod-left.sidebar') : $('.sidebar-toggle-button.mod-right');
+}
+
+function saveSidebarState(side) {
+  if ($(window).width() < sidebarDesktopWidth) {
+    return;
+  }
+  try {
+    localStorage.setItem(side + 'SidebarCollapsed', sidebarToggle(side).first().hasClass('is-collapsed') ? 'true' : 'false');
+  } catch (e) { }
+}
+
+function restoreSidebarState(side) {
+  if ($(window).width() < sidebarDesktopWidth) {
+    return;
+  }
+  var saved = null;
+  try {
+    saved = localStorage.getItem(side + 'SidebarCollapsed');
+  } catch (e) { }
+  if (saved === null) {
+    return;
+  }
+  var toggle = sidebarToggle(side).first();
+  if (toggle.length && toggle.hasClass('is-collapsed') !== (saved === 'true')) {
+    toggle.trigger('click');
+  }
+}
+
+/**
  * set the "Linked mentions" count in the right sidebar; the row is hidden when it is 0
  * @param {Number} count
  */
@@ -1451,6 +1487,8 @@ $(document).ready(function () {
       $('.mod-left').addClass('is-collapsed');
     }
 
+    saveSidebarState('left');
+
   });
 
 
@@ -1483,7 +1521,15 @@ $(document).ready(function () {
       $('.mod-right').addClass('is-collapsed');
     }
 
+    saveSidebarState('right');
+
   });
+
+  // restore collapsed/expanded sidebars from the last visit (desktop layout only;
+  // on phones the sidebars are drawers that start closed)
+  restoreSidebarState('left');
+  restoreSidebarState('right');
+  document.documentElement.classList.remove('perlite-restore-left-collapsed', 'perlite-restore-right-collapsed');
 
 
   // click search

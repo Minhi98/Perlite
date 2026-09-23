@@ -48,6 +48,7 @@
 - **Linked mentions:** the "Linked mentions" row in the right sidebar is hidden when its count is 0, and resets on every page load so it never shows the previous page's count. The count needs the Metadata Extractor plugin's `metadata.json` at the vault root.
 - **Trailing slash:** page URLs ending in `/` (e.g. `/Folder/Note/`) open the page instead of a blank one.
 - **Edit in Obsidian:** the edit button sends the note's full path (`file=Folder/Note`), so notes with the same name (e.g. several `index.md`) open the right one.
+- **Remembered sidebars:** whether the left and right sidebars are collapsed is saved in the browser (localStorage) and restored on every page load, desktop layout only. A small script in `index.php`'s `<head>` applies it before the page is drawn, so there's no flash.
 
 ### Styles (`perlite.css`)
 - **Collapsed callouts:** always hidden, even when the theme sets a `display` on callout content (ITS columns and cards).
