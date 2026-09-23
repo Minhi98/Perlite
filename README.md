@@ -31,6 +31,7 @@
 - **Empty tags:** empty non-void elements are output as `<div></div>` instead of `<div />`. Before, a title-only callout swallowed the rest of the page.
 - **Markdown links to notes:** `[text](Folder/My%20Note.md)` and `[![[image.png|opts]]](Note.md#Heading)` are internal links, like in Obsidian. They open in the same tab, with hover previews, built the same way as a `[[wikilink]]`. URLs (`https:`, `mailto:` …), `#anchor` links and links to files such as `.pdf` or images are unchanged. Before, these were treated as external links to the raw `.md` file, which Perlite's nginx config blocks.
 - **Heading link text:** `[[Page#Heading]]` without an alias shows as "Page > Heading", like Obsidian. Links to a heading on the page being viewed (`[[#Heading]]` or `[[This Page#Heading]]`) show just the heading text and scroll within the page. `[[#Heading|alias]]` no longer puts the alias into the URL.
+- **Links in tables:** the escaped alias pipe Obsidian uses in tables (`[[Note\|Alias]]`, `![[image.png\|options]]`) is treated as a normal `|`. Before, the backslash stayed in the link, which led to a blank page.
 
 ### Frontend (`perlite.js`)
 - **Heading IDs:** a heading whose generated ID clashes with an existing one gets an `h-` prefix. Before, a `# Settings` heading took over `#settings` and broke the settings cogwheel.
@@ -45,6 +46,7 @@
 - **Outline (table of contents):** clicking an outline link, in the sidebar or the mobile pop-up, scrolls to the heading the same way section links do and updates the URL. The mobile pop-up closes after a click. Headings that contain links or formatting are now listed, and headings inside embedded notes are left out, like Obsidian.
 - **Footnote previews:** hovering a footnote reference shows the footnote in a popover, whether page previews are on or off. It stays open while the mouse is over it, so links inside work, and closes on scroll or click. Embedded notes show their own footnotes.
 - **Linked mentions:** the "Linked mentions" row in the right sidebar is hidden when its count is 0, and resets on every page load so it never shows the previous page's count. The count needs the Metadata Extractor plugin's `metadata.json` at the vault root.
+- **Trailing slash:** page URLs ending in `/` (e.g. `/Folder/Note/`) open the page instead of a blank one.
 
 ### Styles (`perlite.css`)
 - **Collapsed callouts:** always hidden, even when the theme sets a `display` on callout content (ITS columns and cards).

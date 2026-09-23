@@ -1285,7 +1285,8 @@ class PerliteParsedown extends Parsedown
             return;
         }
 
-        $raw = $matches[1];
+        # inside tables Obsidian writes the alias pipe escaped: [[Note\|Alias]]
+        $raw = str_replace('\\|', '|', $matches[1]);
 
         // Split Obsidian-style: file|label|popup
         $parts = explode('|', $raw);
@@ -1440,7 +1441,8 @@ class PerliteParsedown extends Parsedown
             return;
         }
 
-        $raw = $m[1];
+        # inside tables Obsidian writes the pipe escaped: ![[image.png\|options]]
+        $raw = str_replace('\\|', '|', $m[1]);
         $parts = explode('|', $raw);
 
         $file = $parts[0];
@@ -1699,7 +1701,7 @@ class PerliteParsedown extends Parsedown
             return;
         }
 
-        $parts = explode('|', $m[1]);
+        $parts = explode('|', str_replace('\\|', '|', $m[1]));
         $target = trim(array_shift($parts));
         $alt = trim(implode('|', $parts));
 

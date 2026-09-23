@@ -52,6 +52,11 @@ if ($('#showLocalGraph').data('option') == false || localStorage.getItem("showLo
  */
 function unslugURL(targetPath) {
 
+  // "/Folder/Note/" is the same page as "/Folder/Note"
+  if (targetPath.length > 1) {
+    targetPath = targetPath.replace(/\/+$/, '');
+  }
+
   decodedURI = decodeURIComponent(targetPath);
   decodedURI = decodedURI.replaceAll('-', ' ')
   decodedURI = decodedURI.replaceAll('~', '-')
