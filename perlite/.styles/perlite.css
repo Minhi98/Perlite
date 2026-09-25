@@ -325,3 +325,9 @@ html.perlite-restore-left-collapsed .workspace-split.mod-left-split,
 html.perlite-restore-right-collapsed .workspace-split.mod-right-split {
   display: none !important;
 }
+
+/* hide the status bar in the bottom right (backlinks, words, characters) */
+.app-container .status-bar,
+.status-bar {
+  display: none !important;
+}
