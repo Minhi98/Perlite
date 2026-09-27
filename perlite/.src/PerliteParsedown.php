@@ -111,7 +111,13 @@ class PerliteParsedown extends Parsedown
             $yamlBlockArray = array_slice($lines, 0, $endIndex);
             $yamlBlockText = implode("\n", $yamlBlockArray);
             $lines = array_slice($lines, $endIndex + 1, count($lines));
-            $parsedYamlBlockText = $this->yamlFrontmatter($yamlBlockText);
+            # the properties box is not rendered (it did nothing on the site);
+            # the "title" property is passed on as the page's display title
+            $noteTitle = $this->frontmatterTitle($yamlBlockText);
+            if ($noteTitle !== '') {
+                $parsedYamlBlockText = '<div class="perlite-note-title" style="display:none" data-title="'
+                    . self::escape($noteTitle) . '"></div>';
+            }
         }
 
         # footnotes: pull out [^id]: definitions before block parsing
@@ -1654,6 +1660,30 @@ class PerliteParsedown extends Parsedown
     }
 
     #
+    # Front matter "title": a display title for the page, e.g. for characters a
+    # file name can't contain ("Vestiges - Hearts Surpassing Heaven.md" with
+    # title: "Vestiges: Hearts Surpassing Heaven")
+
+    protected function frontmatterTitle(string $yaml)
+    {
+        if (!preg_match('/^title[ \t]*:[ \t]*(.*)$/mi', str_replace("\r", '', $yaml), $m)) {
+            return '';
+        }
+        $value = trim($m[1]);
+        if ($value === '' || $value[0] === '|' || $value[0] === '>') {
+            return '';
+        }
+        if ($value[0] === '"' && preg_match('/^"((?:[^"\\\\]|\\\\.)*)"/', $value, $q)) {
+            return trim(stripcslashes($q[1]));
+        }
+        if ($value[0] === "'" && preg_match("/^'((?:[^']|'')*)'/", $value, $q)) {
+            return trim(str_replace("''", "'", $q[1]));
+        }
+        # plain value: " #" starts a YAML comment
+        return trim(preg_replace('/\s+#.*$/', '', $value));
+    }
+
+    #
     # Front matter cssclasses (Obsidian: "cssclasses" list, legacy "cssclass")
     #   cssclasses: [a, b] | cssclasses: a, b | cssclasses:\n  - a\n  - b
 
@@ -1879,7 +1909,12 @@ class PerliteParsedown extends Parsedown
         if (!is_file($mdFile)) {
             return null;
         }
-        $md = $this->extractNoteSection((string) file_get_contents($mdFile), $sub);
+        $rawNote = (string) file_get_contents($mdFile);
+        $embedTitle = '';
+        if (preg_match('/\A---\r?\n(.*?)\r?\n---\s*(\r?\n|\z)/s', $rawNote, $fm)) {
+            $embedTitle = $this->frontmatterTitle($fm[1]);
+        }
+        $md = $this->extractNoteSection($rawNote, $sub);
         if ($md === null) {
             return null;
         }
@@ -1906,7 +1941,7 @@ class PerliteParsedown extends Parsedown
         $urlPath = str_replace(' ', '-', $urlPath);
         $href = $this->uriPath . $urlPath . ($sub !== '' ? '#' . str_replace(' ', '_', ltrim(basename(str_replace('#', '/', $sub)), '^')) : '');
 
-        $title = basename($note);
+        $title = $embedTitle !== '' ? $embedTitle : basename($note);
 
         return '<div class="internal-embed markdown-embed inline-embed is-loaded" src="' . self::escape($target) . '"'
             . ($alt !== '' ? ' alt="' . self::escape($alt) . '"' : '') . '>'

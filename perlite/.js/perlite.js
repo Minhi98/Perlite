@@ -230,6 +230,14 @@ function getContent(str, home = false, popHover = false, anchor = "") {
             if (parentTitle) {
               parentTitle = parentTitle + ' / ';
             }
+
+            // a "title" property in the note's front matter replaces the displayed
+            // title (the URL, file tree and links keep the file name)
+            var displayTitle = $("#mdContent > .perlite-note-title").attr("data-title");
+            if (displayTitle) {
+              title = displayTitle;
+            }
+
             $("div.view-header-title-parent").text(parentTitle);
             $("div.view-header-title").text(title);
             $(".inline-title").text(title);
@@ -512,6 +520,10 @@ function getContent(str, home = false, popHover = false, anchor = "") {
           title = title.substring(1)
           titleElements = title.split('/')
           title = titleElements.splice(-1)
+          var hoverDisplayTitle = $("#mdHoverContent > .perlite-note-title").attr("data-title");
+          if (hoverDisplayTitle) {
+            title = hoverDisplayTitle;
+          }
           $(".inline-title.pophover-title").text(title);
           $(".popup-modal-title").text(title);
 

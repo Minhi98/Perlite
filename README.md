@@ -32,6 +32,7 @@
 - **Markdown links to notes:** `[text](Folder/My%20Note.md)` and `[![[image.png|opts]]](Note.md#Heading)` are internal links, like in Obsidian. They open in the same tab, with hover previews, built the same way as a `[[wikilink]]`. URLs (`https:`, `mailto:` …), `#anchor` links and links to files such as `.pdf` or images are unchanged. Before, these were treated as external links to the raw `.md` file, which Perlite's nginx config blocks.
 - **Heading link text:** `[[Page#Heading]]` without an alias shows as "Page > Heading", like Obsidian. Links to a heading on the page being viewed (`[[#Heading]]` or `[[This Page#Heading]]`) show just the heading text and scroll within the page. `[[#Heading|alias]]` no longer puts the alias into the URL.
 - **Links in tables:** the escaped alias pipe Obsidian uses in tables (`[[Note\|Alias]]`, `![[image.png\|options]]`) is treated as a normal `|`. Before, the backslash stayed in the link, which led to a blank page.
+- **Frontmatter:** the Properties box is no longer shown. A `title` property replaces the displayed title (page title, header, browser tab, hover previews, embed heading), e.g. `title: "Vestiges: Hearts Surpassing Heaven"` for characters a file name can't contain. URLs, the file tree, links and the edit link keep the file name.
 
 ### Frontend (`perlite.js`)
 - **Heading IDs:** a heading whose generated ID clashes with an existing one gets an `h-` prefix. Before, a `# Settings` heading took over `#settings` and broke the settings cogwheel.
