@@ -143,9 +143,26 @@ h1, h2, h3, h4 {
   display: none;
 }
 
+/* hover preview: Obsidian's size (--popover-width x --popover-height), placed
+   next to the link by perlite.js and kept inside the window */
+.popover.hover-popover {
+  position: fixed;
+}
 .popover.hover-popover > * {
-  width: 100%;
-} 
+  width: var(--popover-width);
+  max-width: calc(100vw - 16px);
+}
+/* note title at the top of a whole-note preview when "Show inline title" is on
+   (a heading preview starts with the heading itself) */
+body.show-inline-title .popover.hover-popover:not(.is-section) .inline-title.pophover-title {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.popover.hover-popover.is-section .inline-title.pophover-title {
+  display: none;
+}
 
 span.cm-highlight {
   background-color: var(--text-highlight-bg);

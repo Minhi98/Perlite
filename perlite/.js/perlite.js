@@ -125,22 +125,25 @@ function looseAnchor(text) {
   return normalizeAnchor(text).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim();
 }
 
-function findAnchorTarget(aid) {
+function findAnchorTarget(aid, rootEl) {
   var raw = String(aid || '').replace(/^#/, '');
   try {
     raw = decodeURIComponent(raw);
   } catch (e) { }
-  var root = document.getElementById('mdContent');
+  var root = rootEl || document.getElementById('mdContent');
   if (!raw || !root) {
     return null;
   }
+  var findId = function (id) {
+    return Array.from(root.querySelectorAll('[id]')).find(function (el) { return el.id === id; }) || null;
+  };
   // nested heading links ([[Page#Chapter#Section]]) go to the last heading
-  if (raw.indexOf('#') !== -1 && !document.getElementById(raw)) {
+  if (raw.indexOf('#') !== -1 && !findId(raw)) {
     raw = raw.split('#').filter(Boolean).pop() || raw;
   }
 
-  var byId = document.getElementById(raw);
-  if (byId && root.contains(byId)) {
+  var byId = findId(raw);
+  if (byId) {
     return byId;
   }
   var named = Array.from(root.querySelectorAll('a[name]')).find(function (a) {
@@ -171,6 +174,180 @@ function findAnchorTarget(aid) {
 
 
 /**
+ * page preview on hover (internal links), like Obsidian: opens next to the link
+ * after a short delay, stays open while the mouse is on the link or the preview,
+ * and a link to a heading shows only that section
+ */
+var perliteHover = { link: null, token: 0, showTimer: null, hideTimer: null };
+
+/**
+ * reduce a rendered note to the section an anchor points to: the heading and
+ * everything up to the next heading of the same or a higher level
+ * @param {Element} container
+ * @param {String} anchor
+ * @returns {Boolean} true if a section was found
+ */
+function showOnlySection(container, anchor) {
+  if (!container) {
+    return false;
+  }
+  var target = findAnchorTarget(anchor, container);
+  if (!target || !/^H[1-6]$/.test(target.tagName)) {
+    return false;
+  }
+  var level = parseInt(target.tagName.substring(1));
+  var keep = [target];
+  for (var el = target.nextElementSibling; el; el = el.nextElementSibling) {
+    if (/^H[1-6]$/.test(el.tagName) && parseInt(el.tagName.substring(1)) <= level) {
+      break;
+    }
+    keep.push(el);
+  }
+  // keep the hidden note info (title, word count) for the preview title
+  var info = Array.from(container.children).filter(function (el) {
+    return el.querySelector && (el.querySelector('.mdTitleHide') || el.classList.contains('perlite-note-title'));
+  });
+  container.replaceChildren.apply(container, info.concat(keep));
+  return true;
+}
+
+function hoverPopoverEnabled() {
+  return !$('.disablePopUp').hasClass('is-enabled') && $(window).width() >= 990;
+}
+
+function hideHoverPopover() {
+  clearTimeout(perliteHover.showTimer);
+  clearTimeout(perliteHover.hideTimer);
+  perliteHover.token++;
+  perliteHover.link = null;
+  $('.popover.hover-popover').css('display', 'none');
+}
+
+function scheduleHideHoverPopover() {
+  clearTimeout(perliteHover.showTimer);
+  clearTimeout(perliteHover.hideTimer);
+  perliteHover.hideTimer = setTimeout(hideHoverPopover, 300);
+}
+
+/**
+ * show the preview below the hovered link (above it when there's no room),
+ * kept inside the window
+ */
+function showHoverPopover() {
+  var link = perliteHover.link;
+  var pop = $('.popover.hover-popover');
+  if (!link || !link.isConnected) {
+    return;
+  }
+  // the title gets the same box as the page's title (themes style that one only)
+  var pageTitle = $('.inline-title').not('.pophover-title').filter(':visible').first();
+  if (pageTitle.length) {
+    pop.find('.pophover-title').css('padding', pageTitle.css('padding'));
+  }
+  var embed = pop.children('.markdown-embed');
+  embed.css('max-height', '');
+  pop.css({ display: 'flex', visibility: 'hidden', top: 0, left: 0 });
+  embed.scrollTop(0);
+  var margin = 8, gap = 6;
+  var r = link.getBoundingClientRect();
+  var w = pop.outerWidth(), h = pop.outerHeight();
+  var vw = window.innerWidth, vh = window.innerHeight;
+  var left = Math.min(r.left, vw - w - margin);
+  var below = vh - margin - (r.bottom + gap), above = r.top - gap - margin;
+  var top;
+  if (h <= below) {
+    top = r.bottom + gap;
+  } else if (h <= above) {
+    top = r.top - gap - h;
+  } else {
+    // too tall for either side: shrink it (it scrolls) on the roomier side
+    var room = Math.max(below, above, 100);
+    embed.css('max-height', room - (h - embed.outerHeight()) + 'px');
+    h = pop.outerHeight();
+    top = below >= above ? r.bottom + gap : Math.max(margin, r.top - gap - h);
+  }
+  pop.css({ top: top + 'px', left: Math.max(margin, left) + 'px', visibility: '' });
+}
+
+/**
+ * the note (and heading) an internal link points to
+ * @param {Element} link
+ */
+function hoverTargetOf(link) {
+  var href = link.getAttribute('href') || '';
+  if (!href) {
+    return null;
+  }
+  var url;
+  try {
+    url = new URL(link.href);
+  } catch (e) {
+    return null;
+  }
+  if (url.origin !== location.origin) {
+    return null;
+  }
+  var path;
+  if (href.charAt(0) === '#') {
+    // same-page link: the note that is open
+    path = $("#mdContent div.mdTitleHide").first().text();
+  } else if (url.searchParams.has('link')) {
+    path = url.searchParams.get('link');
+  } else {
+    path = unslugURL(url.pathname);
+  }
+  if (!path || path === '/') {
+    return null;
+  }
+  return { path: encodeURIComponent(path), anchor: url.hash };
+}
+
+$(document).on('mouseenter', '.internal-link', function () {
+  if ($(this).closest('.hover-popover, #popUp, .modal-container').length || !hoverPopoverEnabled()) {
+    return;
+  }
+  var link = this;
+  clearTimeout(perliteHover.hideTimer);
+  if (perliteHover.link === link && $('.popover.hover-popover').css('display') !== 'none') {
+    return;
+  }
+  clearTimeout(perliteHover.showTimer);
+  perliteHover.showTimer = setTimeout(function () {
+    var target = hoverTargetOf(link);
+    if (!target) {
+      return;
+    }
+    perliteHover.token++;
+    perliteHover.link = link;
+    getContent(target.path, false, 'hover', target.anchor);
+  }, 300);
+});
+
+$(document).on('mouseleave', '.internal-link', function () {
+  if ($(this).closest('.hover-popover').length) {
+    return;
+  }
+  clearTimeout(perliteHover.showTimer);
+  if (perliteHover.link) {
+    scheduleHideHoverPopover();
+  }
+});
+
+$(document).on('mouseenter', '.popover.hover-popover', function () {
+  clearTimeout(perliteHover.hideTimer);
+});
+
+$(document).on('mouseleave', '.popover.hover-popover', scheduleHideHoverPopover);
+
+// a click (following a link, or anywhere else) closes the preview
+$(document).on('mousedown', function (e) {
+  if (perliteHover.link && !$(e.target).closest('.popover.hover-popover').length) {
+    hideHoverPopover();
+  }
+});
+
+
+/**
  * get markdown content
  * @param {String} str
  * @param {Boolean} home
@@ -197,12 +374,16 @@ function getContent(str, home = false, popHover = false, anchor = "") {
     }
 
     mdContent = $("#mdContent")[0]
+    var hoverToken = perliteHover.token;
 
 
     $.ajax({
       url: requestPath, success: function (result) {
 
         if (popHover == false) {
+
+          // a new page closes any open hover preview
+          hideHoverPopover();
 
           // set content
           $("#mdContent").html(result);
@@ -446,77 +627,6 @@ function getContent(str, home = false, popHover = false, anchor = "") {
 
           });
 
-          // popHover (on hover internal links)
-          target = $('.disablePopUp')
-
-          if (!target.hasClass('is-enabled')) {
-
-            var currentMousePos = { x: -1, y: -1 };
-            $(document).mousemove(function (event) {
-              currentMousePos.x = event.pageX;
-              currentMousePos.y = event.pageY;
-            });
-
-            stopThis = false;
-            // enter the hover box
-            $('.popover.hover-popover').mouseenter(function (e) {
-              stopThis = true
-              $('.popover.hover-popover').css('display', 'unset');
-            })
-            // leave the hover box
-            $('.popover.hover-popover').mouseleave(function (e) {
-              e.preventDefault();
-
-              hoverTimer = setTimeout(function () {
-
-                $('.popover.hover-popover').css('display', 'none');
-                stopThis = false;
-
-              }, 500);
-            })
-
-            // leave the link
-            $('.internal-link').mouseleave(function (e) {
-              e.preventDefault();
-
-              hoverTimer = setTimeout(function () {
-
-                if (stopThis == false) {
-                  $('.popover.hover-popover').css('display', 'none');
-                }
-              }, 1200);
-            })
-
-            $('.internal-link').mouseenter(function (e) {
-              e.preventDefault();
-
-              // update position for hover element
-              $('.popover.hover-popover').css({ top: currentMousePos.y, left: currentMousePos.x });
-
-              const urlParams = new URLSearchParams(this.href.split('?')[1]);
-              if (urlParams.has('link')) {
-                var target = urlParams.get('link');
-                target = encodeURIComponent(target);
-              } else {
-                target = unslugURL(this.pathname)
-                target = encodeURIComponent(target);                      
-              }
-
-
-              if (this.href.split('#').length > 1) {
-                return;
-              }
-
-              // get content of link
-              if (target) {
-                getContent(target, false, true)
-              }
-
-            });
-
-          }
-
-
           //check setting if metadata is collapsed or not
           if ($('.metadataOption').hasClass('is-enabled')) {
             $('.metadata-properties-heading').trigger('click')
@@ -527,6 +637,11 @@ function getContent(str, home = false, popHover = false, anchor = "") {
         } else {
 
           
+          // a hover preview whose link is no longer hovered (or was replaced
+          // by another one) is dropped
+          if (popHover === 'hover' && hoverToken !== perliteHover.token) {
+            return;
+          }
           if (result.trim() == "") {
             return;
           }
@@ -535,7 +650,7 @@ function getContent(str, home = false, popHover = false, anchor = "") {
           $("#popUpContent").html(result);
 
           // set title
-          var title = $("div.mdTitleHide").eq(1).text() || "";
+          var title = $("#mdHoverContent div.mdTitleHide").first().text() || "";
           title = title.substring(1)
           titleElements = title.split('/')
           title = titleElements.splice(-1)[0].replace(/\.canvas$/i, '')
@@ -546,9 +661,19 @@ function getContent(str, home = false, popHover = false, anchor = "") {
           $(".inline-title.pophover-title").text(title);
           $(".popup-modal-title").text(title);
 
+          // a link to a heading ([[Note#Heading]]) previews just that section,
+          // like Obsidian (the whole note if the heading isn't found)
+          var isSection = false;
+          if (anchor) {
+            isSection = showOnlySection($("#mdHoverContent")[0], anchor);
+            showOnlySection($("#popUpContent")[0], anchor);
+          }
+          $('.popover.hover-popover').toggleClass('is-section', isSection);
 
           // show pophover
-          $('.popover.hover-popover').css('display', 'unset');
+          if (popHover === 'hover') {
+            showHoverPopover();
+          }
 
           mdContent = $("#mdHoverContent")[0]
 
@@ -1435,7 +1560,7 @@ function isMobile() {
 
 
         if (target) {
-          getContent(target, false, true)
+          getContent(target, false, true, new URL(this.href).hash)
         }
         $("#popUp").css("display", "flex");
         $(".goToLink").html('<a href="' + this.href + '"> go to site</a><br><br>')
