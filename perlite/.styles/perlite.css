@@ -602,14 +602,21 @@ body:not(.perlite-show-properties) .mod-header:not(.mod-ui):has(> .metadata-cont
   display: none !important;
 }
 
-/* tags in the right sidebar wrap onto several lines instead of running off-screen */
+/* tags in the right sidebar wrap onto several lines instead of running off-screen
+   (the list fills the row; Obsidian's zero-width ::before spacer is removed so it
+   doesn't add an empty line above the tags) */
 #tags_container .tree-item-self {
-  display: block;
   white-space: normal;
+}
+#tags_container .tree-item-self::before {
+  content: none;
+  display: none;
 }
 #mytags {
   display: flex;
   flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
   gap: 4px;
   white-space: normal;
   overflow: visible;
