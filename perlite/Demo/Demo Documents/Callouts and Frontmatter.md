@@ -1,4 +1,7 @@
 ---
+title: "Beispielnotiz"
+date: 2024-06-15
+status: in progress
 tags:
   - tag1
   - tag-test
@@ -20,6 +23,8 @@ Im a YAML front matter document
 > Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur et gravida diam, et varius magna. Proin `id felis quis nisl` gravida auctor a eu est. In viverra dui viverra placerat cursus. Curabitur non commodo mi. Mauris volutpat nisl vitae nulla efficitur condimentum. Nulla facilisi. Maecenas malesuada purus mi, eget fringilla quam ultrices sit amet.
 
 ##  Callouts
+
+> [!note] Leeres Callout
 
 > [!note]
 > Lorem ipsum dolor sit amet

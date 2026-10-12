@@ -4,7 +4,7 @@
 <?php
 
 /*!
- * Version v1.6
+ * Version v1.6.3
  */
 
 require_once __DIR__ . '/vendor/autoload.php';
@@ -909,6 +909,20 @@ $jsonGraphData = getfullGraph($rootDir);
                         <div class="setting-item-control">
                             <div class="checkbox-container is-enabled darkModeOption"><input type="checkbox"
                                     tabindex="0"></div>
+                        </div>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-item-info">
+                            <div class="setting-item-name">Print colors</div>
+                            <div class="setting-item-description">Color scheme used when printing a note.</div>
+                        </div>
+                        <div class="setting-item-control">
+                            <select id="printModeDropdown" class="dropdown">
+                                <option value="light">Light theme variant</option>
+                                <option value="screen">As on screen</option>
+                                <option value="bw">Black &amp; white</option>
+                            </select>
                         </div>
                     </div>
 

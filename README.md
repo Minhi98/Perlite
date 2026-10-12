@@ -1,5 +1,5 @@
 > [!NOTE]
-> **Fork notes:** this is a fork of [secure-77/Perlite](https://github.com/secure-77/Perlite), based on v1.6.1 (`2869faa`).
+> **Fork notes:** this is a fork of [secure-77/Perlite](https://github.com/secure-77/Perlite), originally based on v1.6.1 (`2869faa`), last merged with upstream v1.6.3 (`7649301`).
 > The changes are for better Obsidian / ITS CSS Snippet compatibility (by SIRvb). The main changes are in `perlite/.src/PerliteParsedown.php`,
 > `perlite/.js/perlite.js`, `perlite/.styles/perlite.css` and `perlite/helper.php`.
 
@@ -18,9 +18,7 @@
   - Rendered as Obsidian's `<ul class="contains-task-list"><li class="task-list-item" data-task="…">`.
   - Any checkbox character works (alternate checkboxes: `[?]`, `[!]`, `[-]`, `[/]` …).
   - A task item no longer wipes out the rest of its list (this broke kanban and checks callouts).
-- **Footnotes:**
-  - `text[^1]` references and `[^1]: …` definitions are supported, with a numbered list at the end of the page and return links.
-  - Named footnotes and indented continuation lines work.
+- **Footnotes:** uses upstream's footnote support (since v1.6.3, incl. inline `^[...]` footnotes); the fork adds hover previews (see Frontend) and hides `^block-id` markers.
 - **Note embeds:**
   - `![[Note]]`, `![[Note#Heading]]` and `![[Note#^block]]` are embedded in Obsidian's embed structure, so ITS Embed Adjustments work (`clean`, `no-title`, `nlk` …).
   - Notes are found the way Obsidian finds them, and only notes Perlite already serves can be embedded, so hidden folders stay hidden.
@@ -105,24 +103,26 @@ If you want to discuss Perlite you can join the [Perlite Discord Server](https:/
 - Search
 - Obsidian tags, links, images and preview Support
 - Dark and Light Mode
+- Obsidian Canvas support
 
 
 ## Install
-Please make sure you read the [required settings](https://github.com/secure-77/Perlite/wiki/03---Perlite-Settings#required-settings) first!
+Please make sure you read the [required Obsidian settings](perlite/Demo/Documentation/05-Obsidian-Settings.md) first!
 
 You can download the latest release from github or git clone the project and use docker.
 
-- For non Docker please check [Setup](https://github.com/secure-77/Perlite/wiki/01---Setup-(no-Docker))
-- For Docker, please check [Docker Setup](https://github.com/secure-77/Perlite/wiki/02---Setup-Docker)
+- For Docker, please check [Docker Setup](perlite/Demo/Documentation/01-Docker-Setup.md)
+- For non Docker please check [Setup without Docker](perlite/Demo/Documentation/02-Setup-without-Docker.md)
 
 
-## Wiki
-Please check the [wiki](https://github.com/secure-77/Perlite/wiki), here you will find further information, for example:
+## Documentation
+Please check the [documentation](perlite/Demo/Documentation/00-Index.md), here you will find further information, for example:
 
-- [Themes](https://github.com/secure-77/Perlite/wiki/Themes)
-- [Graph Setup and Settings](https://github.com/secure-77/Perlite/wiki/Graph)
-- [Perlite Settings](https://github.com/secure-77/Perlite/wiki/03---Perlite-Settings)
-- [Troubleshooting](https://github.com/secure-77/Perlite/wiki/Troubleshooting)
+- [.env Settings](perlite/Demo/Documentation/03-Env-Settings.md)
+- [Browser Settings](perlite/Demo/Documentation/04-Browser-Settings.md)
+- [Graph Setup](perlite/Demo/Documentation/06-Graph.md)
+- [Themes](perlite/Demo/Documentation/07-Themes.md)
+- [Troubleshooting & FAQ](perlite/Demo/Documentation/08-Troubleshooting-FAQ.md)
 
 
 ## Security

@@ -1,7 +1,7 @@
 <?php
 
 /*!
- * Perlite v1.6.1 (https://github.com/secure-77/Perlite)
+ * Perlite v1.6.3 (https://github.com/secure-77/Perlite)
  * Author: sec77 (https://secure77.de)
  * Licensed under MIT (https://github.com/secure-77/Perlite/blob/main/LICENSE)
  */
@@ -21,17 +21,14 @@ class PerliteParsedown extends Parsedown
     protected $allowedFileLinkTypes;
     protected $allowedImageTypes;
 
-    # footnotes: id => raw text, and id => number in order of first reference
-    protected $footnoteDefinitions = array();
-    protected $footnoteNumbers = array();
-    protected $footnoteRefCounts = array();
-
     # note embeds: the note being rendered (vault path, e.g. "/Folder/Note")
     # and the chain of embeds being rendered (cycle / depth protection)
     public $currentNote = null;
     protected static $embedStack = array();
 
-    protected $inlineMarkerList = '!"*$_#&[:<>`~\\=%';
+    protected $footnoteCount = 0;
+    protected $inlineFootnoteCount = 0;
+    protected $inlineMarkerList = '!"*$_#&[:<>`~\\=%^';
 
     protected $InlineTypes = array(
         '"' => array('SpecialCharacter'),
@@ -41,7 +38,7 @@ class PerliteParsedown extends Parsedown
         ':' => array('Url'),
         '<' => array('UrlTag', 'EmailTag', 'Markup', 'SpecialCharacter'),
         '>' => array('SpecialCharacter'),
-        '[' => array('FootnoteMarker', 'Link', 'InternalMarkdownLink', 'InternalLink'),
+        '[' => array('FootnoteMarker', 'InternalMarkdownLink', 'Link', 'InternalLink'),
         '#' => array('Tag'),
         '$' => array('Katex'),
         '_' => array('Emphasis'),
@@ -50,6 +47,7 @@ class PerliteParsedown extends Parsedown
         '\\' => array('EscapeSequence'),
         '=' => array('Highlight'),
         '%' => array('Hidden'),
+        '^' => array('InlineFootnote'),
     );
 
 
@@ -78,13 +76,15 @@ class PerliteParsedown extends Parsedown
         $this->allowedImageTypes = $allowedImageTypes;
 
         $this->BlockTypes['!'] = array('NoteEmbed', 'YouTube');
-
+        $this->BlockTypes['['] = array('Footnote', 'Reference');
     }
 
     function text($text)
     {
         # make sure no definitions are set
         $this->DefinitionData = array();
+        $this->footnoteCount = 0;
+        $this->inlineFootnoteCount = 0;
 
         # standardize line breaks
         $text = str_replace(array("\r\n", "\r"), "\n", $text);
@@ -120,14 +120,11 @@ class PerliteParsedown extends Parsedown
             }
         }
 
-        # footnotes: pull out [^id]: definitions before block parsing
-        $lines = $this->extractFootnoteDefinitions($lines);
+        # hide Obsidian block ids ("text ^my-block"), like Obsidian's reading view
+        $lines = $this->hideBlockIds($lines);
 
         # iterate through lines to identify blocks
         $markup = $this->lines($lines);
-
-        # append the footnotes list
-        $markup .= $this->buildFootnotesSection();
 
         # cssclasses from front matter -> applied to the page by perlite.js
         if (isset($yamlBlockText)) {
@@ -140,17 +137,45 @@ class PerliteParsedown extends Parsedown
 
         # add front matter
         $markup = $parsedYamlBlockText . $markup;
+
+        # add footnotes
+        $markup .= $this->buildFootnotes();
+
         # trim line breaks
         $markup = trim($markup, "\n");
 
         return $markup;
     }
 
+    # pretty url slug of a vault path, reversed by unslugURL() in perlite.js
+    # "~" -> "%2580" (decodes to "%80"), "-" -> "~", " " -> "-"
+    public static function slugPath(string $path): string
+    {
+        $path = str_replace('~', '%2580', $path);
+        $path = str_replace('-', '~', $path);
+        $path = str_replace(' ', '-', $path);
+
+        return $path;
+    }
+
+    #
+    # YAML Front Matter / Obsidian Properties
+    # See: https://help.obsidian.md/Editing+and+formatting/Properties
+
     protected function yamlFrontmatter(string $yaml): string
     {
         $parsed = $this->parseSimpleYaml($yaml);
 
-        $yamlText = '
+        if (empty($parsed)) {
+            return '';
+        }
+
+        $propertiesHtml = '';
+        foreach ($parsed as $key => $value) {
+            $propertiesHtml .= $this->renderProperty((string) $key, $value);
+        }
+
+        return '
     <div class="mod-header">
         <div class="metadata-properties-heading">
             <div class="collapse-indicator collapse-icon">
@@ -160,76 +185,200 @@ class PerliteParsedown extends Parsedown
             </div>
             <div class="metadata-properties-title">Properties</div>
         </div>
-        <div class="metadata-container mod-error" tabindex="-1" data-property-count="1">
+        <div class="metadata-container mod-error" tabindex="-1" data-property-count="' . count($parsed) . '">
             <div class="metadata-content">
-                <div class="metadata-properties">
-    ';
-
-        // Aliases
-        if (isset($parsed['aliases']) && is_array($parsed['aliases'])) {
-            $yamlText .= '
-        <div class="metadata-property" tabindex="0" data-property-key="aliases" data-property-type="multitext">
-            <div class="metadata-property-key">
-                <span class="metadata-property-icon" aria-disabled="false">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-forward">
-                        <polyline points="15 17 20 12 15 7"/>
-                        <path d="M4 18v-2a4 4 0 0 1 4-4h12"/>
-                    </svg>
-                </span>
-                <span class="metadata-text">aliases</span>
+                <div class="metadata-properties">'
+            . $propertiesHtml . '
+                </div>
             </div>
-            <div class="metadata-property-value">
-                <div class="multi-select-container">
-        ';
+        </div>
+    </div>';
+    }
 
-            foreach ($parsed['aliases'] as $alias) {
-                $yamlText .= '<div class="multi-select-pill multi-select-pill-content">'
-                    . htmlspecialchars($alias, ENT_QUOTES, 'UTF-8')
-                    . '</div>';
-            }
+    protected function renderProperty(string $key, $value): string
+    {
+        $type = $this->getPropertyType($key, $value);
+        [$iconClass, $iconPaths] = $this->getPropertyIcon($type);
 
-            $yamlText .= '</div></div></div>';
-        }
-
-        // Tags
-        if (isset($parsed['tags']) && is_array($parsed['tags'])) {
-            $yamlText .= '
-        <div class="metadata-property" tabindex="0" data-property-key="tags" data-property-type="multitext">
-            <div class="metadata-property-key">
-                <span class="metadata-property-icon" aria-disabled="false">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-tags">
-                        <path d="M9 5H2v7l6.29 6.29c.94.94 2.48.94 3.42 0l3.58-3.58c.94-.94.94-2.48 0-3.42L9 5Z"/>
-                        <path d="M6 9.01V9"/>
-                        <path d="m15 5 6.3 6.3a2.4 2.4 0 0 1 0 3.4L17 19"/>
-                    </svg>
-                </span>
-                <span class="metadata-text">tags</span>
-            </div>
-            <div class="metadata-property-value">
-                <div class="multi-select-container">
-        ';
-
-            foreach ($parsed['tags'] as $tag) {
-                $Block = [
-                    'element' => [
+        switch ($type) {
+            case 'tags':
+                $valueHtml = '<div class="multi-select-container">';
+                foreach ($this->normalizeYamlList($value, true) as $tag) {
+                    $valueHtml .= $this->element(array(
                         'name' => 'div',
                         'text' => '#' . $tag,
-                        'attributes' => [
-                            'class' => 'multi-select-pill multi-select-pill-content'
-                        ],
                         'handler' => 'line',
-                    ],
-                ];
+                        'attributes' => array('class' => 'multi-select-pill multi-select-pill-content'),
+                    ));
+                }
+                $valueHtml .= '</div>';
+                break;
 
-                $yamlText .= $this->elements($Block);
-            }
+            case 'aliases':
+            case 'multitext':
+                $valueHtml = '<div class="multi-select-container">';
+                foreach ($this->normalizeYamlList($value) as $item) {
+                    $valueHtml .= $this->element(array(
+                        'name' => 'div',
+                        'text' => $item,
+                        'handler' => 'line',
+                        'attributes' => array('class' => 'multi-select-pill multi-select-pill-content'),
+                    ));
+                }
+                $valueHtml .= '</div>';
+                break;
 
-            $yamlText .= '</div></div></div>';
+            case 'checkbox':
+                $valueHtml = $this->element(array(
+                    'name' => 'input',
+                    'attributes' => array(
+                        'class' => 'metadata-input-checkbox',
+                        'type' => 'checkbox',
+                        'checked' => $value ? 'checked' : null,
+                        'disabled' => 'disabled',
+                    ),
+                ));
+                break;
+
+            case 'number':
+                $valueHtml = $this->element(array(
+                    'name' => 'input',
+                    'attributes' => array(
+                        'class' => 'metadata-input metadata-input-number',
+                        'type' => 'number',
+                        'value' => (string) $value,
+                        'readonly' => 'readonly',
+                    ),
+                ));
+                break;
+
+            case 'date':
+                $valueHtml = $this->element(array(
+                    'name' => 'input',
+                    'attributes' => array(
+                        'class' => 'metadata-input metadata-input-text mod-date',
+                        'type' => 'date',
+                        'value' => $value,
+                        'readonly' => 'readonly',
+                    ),
+                ));
+                break;
+
+            case 'datetime':
+                preg_match('/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)/', $value, $dm);
+                $valueHtml = $this->element(array(
+                    'name' => 'input',
+                    'attributes' => array(
+                        'class' => 'metadata-input metadata-input-text mod-datetime',
+                        'type' => 'datetime-local',
+                        'value' => $dm[1] . 'T' . $dm[2],
+                        'readonly' => 'readonly',
+                    ),
+                ));
+                break;
+
+            default: // text
+                $valueHtml = $this->element(array(
+                    'name' => 'div',
+                    'text' => is_scalar($value) ? (string) $value : '',
+                    'handler' => 'line',
+                    'attributes' => array('class' => 'metadata-input-longtext mod-truncate'),
+                ));
         }
 
-        $yamlText .= '</div></div></div></div></div>';
+        $keyEscaped = htmlspecialchars($key, ENT_QUOTES, 'UTF-8');
 
-        return $yamlText;
+        return '
+        <div class="metadata-property" tabindex="0" data-property-key="' . $keyEscaped . '" data-property-type="' . $type . '">
+            <div class="metadata-property-key">
+                <span class="metadata-property-icon" aria-disabled="false">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon ' . $iconClass . '">'
+            . $iconPaths . '</svg>
+                </span>
+                <span class="metadata-text">' . $keyEscaped . '</span>
+            </div>
+            <div class="metadata-property-value">' . $valueHtml . '</div>
+        </div>';
+    }
+
+    protected function getPropertyType(string $key, $value): string
+    {
+        $key = strtolower($key);
+
+        if ($key === 'tags' || $key === 'tag') {
+            return 'tags';
+        }
+        if ($key === 'aliases' || $key === 'alias') {
+            return 'aliases';
+        }
+        if ($key === 'cssclasses' || $key === 'cssclass') {
+            return 'multitext';
+        }
+        if (is_array($value)) {
+            return empty($value) ? 'text' : 'multitext';
+        }
+        if (is_bool($value)) {
+            return 'checkbox';
+        }
+        if (is_int($value) || is_float($value)) {
+            return 'number';
+        }
+        if (is_string($value)) {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+                return 'date';
+            }
+            if (preg_match('/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/', $value)) {
+                return 'datetime';
+            }
+        }
+
+        return 'text';
+    }
+
+    protected function getPropertyIcon(string $type): array
+    {
+        return match ($type) {
+            'aliases' => ['lucide-forward', '<polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>'],
+            'tags' => ['lucide-tags', '<path d="M9 5H2v7l6.29 6.29c.94.94 2.48.94 3.42 0l3.58-3.58c.94-.94.94-2.48 0-3.42L9 5Z"/><path d="M6 9.01V9"/><path d="m15 5 6.3 6.3a2.4 2.4 0 0 1 0 3.4L17 19"/>'],
+            'multitext' => ['lucide-list', '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>'],
+            'number' => ['lucide-binary', '<rect x="14" y="14" width="4" height="6" rx="2"/><rect x="6" y="4" width="4" height="6" rx="2"/><path d="M6 20h4"/><path d="M14 10h4"/><path d="M6 14h2v6"/><path d="M14 4h2v6"/>'],
+            'checkbox' => ['lucide-check-square', '<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>'],
+            'date' => ['lucide-calendar', '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>'],
+            'datetime' => ['lucide-clock', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'],
+            default => ['lucide-text', '<path d="M17 6.1H3"/><path d="M21 12.1H3"/><path d="M15.1 18H3"/>'],
+        };
+    }
+
+    # always returns a flat list of strings
+    protected function normalizeYamlList($value, bool $isTags = false): array
+    {
+        if ($value === null || $value === '') {
+            return [];
+        }
+
+        if (!is_array($value)) {
+            // tags: "a, b" or "a b" / others: single value
+            $value = $isTags ? preg_split('/[,\s]+/', (string) $value) : [$value];
+        }
+
+        $items = [];
+        foreach ($value as $item) {
+            if ($item === null || is_array($item)) {
+                continue;
+            }
+
+            $item = is_bool($item) ? ($item ? 'true' : 'false') : trim((string) $item);
+
+            if ($isTags) {
+                $item = ltrim($item, '#');
+            }
+
+            if ($item !== '') {
+                $items[] = $item;
+            }
+        }
+
+        return $items;
     }
 
     protected function parseSimpleYaml(string $yaml): array
@@ -240,47 +389,98 @@ class PerliteParsedown extends Parsedown
 
         foreach ($lines as $line) {
             $line = rtrim($line);
+            $trimmed = trim($line);
 
-            // Skip empty lines and comments
-            if ($line === '' || str_starts_with(trim($line), '#')) {
+            // skip empty lines, delimiters and comments
+            if ($trimmed === '' || $trimmed === '---' || str_starts_with($trimmed, '#')) {
                 continue;
             }
 
-            // Key: value
-            if (preg_match('/^([A-Za-z0-9_-]+):\s*(.*)$/', $line, $matches)) {
-                $currentKey = $matches[1];
-                $value = $matches[2];
+            // list item of the current key: "  - value"
+            if ($currentKey !== null && preg_match('/^\s*-(?:\s+(.*))?$/', $line, $matches)) {
+                $item = $this->stripYamlComment($matches[1] ?? '');
+                if ($item !== '') {
+                    $data[$currentKey][] = $this->castYamlValue($item);
+                }
+                continue;
+            }
+
+            // top level key: "key: value" (key may contain spaces, value may contain ":")
+            if (preg_match('/^([^\s#\-][^:]*?):(?:\s+(.*))?$/', $line, $matches)) {
+                $key = trim($matches[1], " \"'");
+                $value = $this->stripYamlComment($matches[2] ?? '');
 
                 if ($value === '') {
-                    $data[$currentKey] = [];
+                    // list follows (or empty value)
+                    $data[$key] = [];
+                    $currentKey = $key;
                 } else {
-                    $data[$currentKey] = $this->castYamlValue($value);
+                    $data[$key] = $this->parseYamlValue($value);
                     $currentKey = null;
                 }
 
                 continue;
             }
 
-            // List item
-            if ($currentKey !== null && preg_match('/^\s*-\s*(.+)$/', $line, $matches)) {
-                $data[$currentKey][] = $this->castYamlValue($matches[1]);
-            }
+            // everything else (nested objects, block scalars) is ignored
         }
 
         return $data;
     }
 
+    protected function parseYamlValue(string $value): mixed
+    {
+        $value = trim($value);
+
+        // flow sequence: [a, b, "c, d"] — but not an unquoted wikilink [[...]]
+        if (str_starts_with($value, '[') && !str_starts_with($value, '[[') && str_ends_with($value, ']')) {
+            $inner = trim(substr($value, 1, -1));
+
+            if ($inner === '') {
+                return [];
+            }
+
+            $items = str_getcsv($inner, ',', '"', '');
+
+            return array_values(array_filter(
+                array_map(fn($item) => $this->castYamlValue(trim($item)), $items),
+                fn($item) => $item !== '' && $item !== null
+            ));
+        }
+
+        return $this->castYamlValue($value);
+    }
+
+    protected function stripYamlComment(string $value): string
+    {
+        $value = trim($value);
+
+        // no comments inside quoted strings
+        if ($value === '' || $value[0] === '"' || $value[0] === "'") {
+            return $value;
+        }
+
+        return trim(preg_replace('/\s+#.*$/', '', $value));
+    }
+
     protected function castYamlValue(string $value): mixed
     {
-        $value = trim($value, " \t\n\r\0\x0B\"'");
+        $value = trim($value);
+
+        // quoted strings stay strings (no type casting)
+        if (strlen($value) >= 2 && ($value[0] === '"' || $value[0] === "'") && substr($value, -1) === $value[0]) {
+            $inner = substr($value, 1, -1);
+
+            return $value[0] === "'"
+                ? str_replace("''", "'", $inner)
+                : str_replace(array('\\"', '\\\\'), array('"', '\\'), $inner);
+        }
 
         return match (strtolower($value)) {
             'true' => true,
             'false' => false,
-            'null' => null,
-            default => is_numeric($value)
-            ? ($value + 0)
-            : $value,
+            'null', '~' => null,
+            default => is_numeric($value) ? ($value + 0) : $value,
         };
     }
 
@@ -432,6 +632,7 @@ class PerliteParsedown extends Parsedown
                                     'class' => 'callout-content ' . $isCollapsed,
                                 ),
                                 'handler' => 'lines',
+                                'text' => array(),
                             ),
 
 
@@ -671,6 +872,43 @@ class PerliteParsedown extends Parsedown
         return $Block;
     }
 
+    # Don't treat indented fences (``` / ~~~) as indented code blocks,
+    # so blockFencedCode() gets a chance (e.g. code blocks inside lists)
+    protected function blockCode($Line, $Block = null)
+    {
+        if (preg_match('/^(`{3,}|~{3,})/', $Line['text'])) {
+            return;
+        }
+
+        return parent::blockCode($Line, $Block);
+    }
+
+    # remember the indentation of the opening fence
+    protected function blockFencedCode($Line)
+    {
+        $Block = parent::blockFencedCode($Line);
+
+        if ($Block !== null) {
+            $Block['fenceIndent'] = $Line['indent'];
+        }
+
+        return $Block;
+    }
+
+    # strip the fence indentation from the code lines
+    protected function blockFencedCodeContinue($Line, $Block)
+    {
+        if (!empty($Block['fenceIndent'])) {
+            $Line['body'] = preg_replace(
+                '/^[ ]{0,' . (int) $Block['fenceIndent'] . '}/',
+                '',
+                $Line['body']
+            );
+        }
+
+        return parent::blockFencedCodeContinue($Line, $Block);
+    }
+
 
     # handle highlight code
     protected function inlineHighlight($Excerpt)
@@ -711,7 +949,6 @@ class PerliteParsedown extends Parsedown
 
             return $Inline;
         }
-
     }
 
     # handle katex code
@@ -1105,15 +1342,49 @@ class PerliteParsedown extends Parsedown
             $markup .= '</' . $Element['name'] . '>';
         } elseif ($closing) {
             $markup .= '</' . $Element['name'] . '>';
-        } elseif (in_array(strtolower($Element['name']), array('area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr'), true)) {
+        } elseif ($this->isSelfClosingElement($Element['name'])) {
             $markup .= ' />';
         } else {
-            # "<div />" is not self-closing in HTML: the browser would leave the
-            # div open and swallow everything after it (e.g. a title-only callout)
+            # non-void elements must be closed explicitly (<div /> is an open <div> in HTML)
             $markup .= '></' . $Element['name'] . '>';
         }
 
         return $markup;
+    }
+
+    protected function isSelfClosingElement(string $name): bool
+    {
+        $tagName = strtolower(strtok($name, " \t"));
+
+        // names like '<path d="..."/>' (used for the callout icons) stay as they are
+        if (!preg_match('/^[a-z][a-z0-9-]*$/', $tagName)) {
+            return true;
+        }
+
+        return in_array($tagName, array(
+            // HTML void elements
+            'area',
+            'base',
+            'br',
+            'col',
+            'embed',
+            'hr',
+            'img',
+            'input',
+            'link',
+            'meta',
+            'source',
+            'track',
+            'wbr',
+            // SVG shapes (self-closing is valid in SVG)
+            'path',
+            'line',
+            'circle',
+            'rect',
+            'polyline',
+            'polygon',
+            'ellipse',
+        ), true);
     }
 
     # adjusted to handle interuppted quote blocks
@@ -1138,17 +1409,10 @@ class PerliteParsedown extends Parsedown
                 unset($parts[0]);
 
                 foreach ($parts as $part) {
-
-
-                    $shortage = 0;
                     if (function_exists('mb_strlen')) {
-                        $shortage = 4 - (mb_strlen($input ?? '', 'UTF-8') % 4);
-                    } elseif (function_exists('iconv')) {
-                        $converted = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT//IGNORE', $input);
-                        $shortage = 4 - (strlen($converted) % 4);
+                        $shortage = 4 - (mb_strlen($line, 'UTF-8') % 4);
                     } else {
-                        // Fallback: count bytes (not characters)
-                        $shortage = 4 - (strlen($input) % 4);
+                        $shortage = 4 - (strlen($line) % 4);
                     }
 
                     $line .= str_repeat(' ', $shortage);
@@ -1295,8 +1559,9 @@ class PerliteParsedown extends Parsedown
         $raw = str_replace('\\|', '|', $matches[1]);
 
         // Split Obsidian-style: file|label|popup
+        // Strip backslash used to escape | in Markdown tables (e.g. [[file.md\|Label]])
         $parts = explode('|', $raw);
-        $linkFile = $parts[0];
+        $linkFile = rtrim($parts[0], '\\');
 
         $ext = pathinfo($linkFile, PATHINFO_EXTENSION);
         $openNewTab = false;
@@ -1321,7 +1586,6 @@ class PerliteParsedown extends Parsedown
             $segments = array_slice($segments, 0, count($segments) - $depth);
             $path = implode('/', $segments);
             $linkFile = preg_replace('#^(\.\./)+#', '', $linkFile);
-
         }
 
         // use only the file name for nice links
@@ -1380,9 +1644,7 @@ class PerliteParsedown extends Parsedown
         if ($openNewTab == false) {
             $urlPath = str_replace('&amp;', '&', $urlPath);
             $urlPath = str_replace('%23', '#', $urlPath);
-            $urlPath = str_replace('~', '%80', $urlPath);
-            $urlPath = str_replace('-', '~', $urlPath);
-            $urlPath = str_replace(' ', '-', $urlPath);
+            $urlPath = self::slugPath($urlPath);
         }
 
         return array(
@@ -1412,8 +1674,8 @@ class PerliteParsedown extends Parsedown
         $label = $m[1];
         $path = $m[2];
 
-        // Reject external links explicitly
-        if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $path)) {
+        // Reject external links / any URI scheme (http:, mailto:, tel:, obsidian:, ...)
+        if (preg_match('#^[a-z][a-z0-9+.-]*:#i', $path)) {
             return;
         }
 
@@ -1421,6 +1683,9 @@ class PerliteParsedown extends Parsedown
         if (str_starts_with($path, '//')) {
             return;
         }
+
+        // Remove .md extension (also before an anchor: note.md#heading -> note#heading)
+        $path = preg_replace('/\.md(?=$|#)/i', '', $path);
 
         // Convert into Obsidian-style payload
         // [[path|label]]
@@ -1439,6 +1704,113 @@ class PerliteParsedown extends Parsedown
         $result['extent'] = strlen($m[0]);
 
         return $result;
+    }
+
+    # handle standard markdown images: ![alt](path "title")
+    # also supports Obsidian sizing: ![alt|300x200](path) / ![alt|300](path)
+    protected function inlineImage($Excerpt)
+    {
+        if (!isset($Excerpt['text'][1]) || $Excerpt['text'][1] !== '[') {
+            return;
+        }
+
+        // ![[...]] is handled by inlineInternalEmbed()
+        if (isset($Excerpt['text'][2]) && $Excerpt['text'][2] === '[') {
+            return;
+        }
+
+        // ![alt|options]() with an empty url (used in ITS templates): empty image
+        if (preg_match('/^!\[([^\]]*)\]\(\s*\)/', $Excerpt['text'], $m)) {
+            return array(
+                'extent' => strlen($m[0]),
+                'element' => array(
+                    'name' => 'img',
+                    'attributes' => array('src' => '', 'alt' => $m[1]),
+                ),
+            );
+        }
+
+        if (!preg_match(
+            '/^!\[((?:[^\[\]]|\\\\.)*)\]\(\s*(<[^>]+>|(?:[^\s()]+|\([^\s()]*\))+)(?:\s+("[^"]*"|\'[^\']*\'))?\s*\)/',
+            $Excerpt['text'],
+            $m
+        )) {
+            // fallback: reference style images ![alt][ref]
+            $Inline = parent::inlineImage($Excerpt);
+            if ($Inline !== null) {
+                unset(
+                    $Inline['element']['attributes']['class'],
+                    $Inline['element']['attributes']['target'],
+                    $Inline['element']['attributes']['rel']
+                );
+            }
+            return $Inline;
+        }
+
+        $alt = $m[1];
+        $url = trim($m[2], '<>');
+        $title = isset($m[3]) ? substr($m[3], 1, -1) : null;
+        $extent = strlen($m[0]);
+
+        // Obsidian size syntax in alt text: ![alt|300x200](...) or ![alt|300](...)
+        $size = null;
+        if (preg_match('/^(.*?)\|(\d*x\d*|\d+)$/', $alt, $sm)) {
+            $alt = $sm[1];
+            $size = ctype_digit($sm[2]) ? $sm[2] . 'x' : $sm[2];
+        }
+
+        /* ---------- external image (http, https, data:, //...) ---------- */
+        if (preg_match('#^([a-z][a-z0-9+.-]*:|//)#i', $url)) {
+            $attributes = array(
+                'src' => $url,
+                'alt' => $alt,
+                'title' => $title,
+            );
+
+            if ($size !== null && preg_match('/^(\d*)x(\d*)$/', $size, $dm)) {
+                $attributes['width'] = $dm[1] ?: null;
+                $attributes['height'] = $dm[2] ?: null;
+            }
+
+            return array(
+                'extent' => $extent,
+                'element' => array(
+                    'name' => 'img',
+                    'attributes' => $attributes,
+                ),
+            );
+        }
+
+        /* ---------- local image (relative to current note) ---------- */
+        // Obsidian encodes spaces etc. in markdown links (%20)
+        $file = rawurldecode($url);
+
+        // strip query string / leading "./"
+        $file = preg_replace('/\?.*$/', '', $file);
+        $file = preg_replace('#^(\./)+#', '', $file);
+
+        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+        if (!in_array($ext, $this->allowedImageTypes)) {
+            return;
+        }
+
+        // "../" segments are resolved by the browser, since
+        // buildInternalImage() produces an absolute src (uriPath + path + file)
+        $Inline = $this->buildInternalImage(
+            $file,
+            array(
+                'caption' => $alt !== '' ? $alt : null,
+                'size' => $size,
+                'align' => null,
+            ),
+            $extent
+        );
+
+        if ($title !== null) {
+            $Inline['element']['elements'][0]['attributes']['title'] = $title;
+        }
+
+        return $Inline;
     }
 
     protected function inlineInternalEmbed($Excerpt)
@@ -1460,6 +1832,15 @@ class PerliteParsedown extends Parsedown
 
         if (str_contains($file, '#')) {
             $ext = strtolower(pathinfo(explode('#', $file)[0], PATHINFO_EXTENSION));
+        }
+
+        /* ---------- Canvas (not embedded, rendered as internal link) ---------- */
+        if ($ext === 'canvas') {
+            $Inline = $this->inlineInternalLink(array('text' => substr($m[0], 1)));
+            if ($Inline !== null) {
+                $Inline['extent'] = strlen($m[0]);
+            }
+            return $Inline;
         }
 
         /* ---------- PDF ---------- */
@@ -1490,7 +1871,7 @@ class PerliteParsedown extends Parsedown
                         'type' => $ext === 'mp4' ? 'video/mp4' : 'audio/x-m4a',
                     ),
                     'text' =>
-                        '<a class="internal-link" target="_blank" rel="noopener noreferrer" href="' .
+                    '<a class="internal-link" target="_blank" rel="noopener noreferrer" href="' .
                         $src . '">Download ' . basename($file) . '</a>',
                 ),
             );
@@ -1516,40 +1897,6 @@ class PerliteParsedown extends Parsedown
                 strlen($m[0])
             );
         }
-
-
-    }
-
-    # External / markdown images, handled like Obsidian:
-    #   ![alt|300](url) or ![alt|300x200](url) -> width/height, alt "alt"
-    #   ![alt|options]() (empty url, used in ITS templates) -> empty image
-    protected function inlineImage($Excerpt)
-    {
-        if (preg_match('/^!\[([^\]]*)\]\(\s*\)/', $Excerpt['text'], $m)) {
-            return array(
-                'extent' => strlen($m[0]),
-                'element' => array(
-                    'name' => 'img',
-                    'attributes' => array('src' => '', 'alt' => $m[1]),
-                ),
-            );
-        }
-
-        $Inline = parent::inlineImage($Excerpt);
-        if ($Inline === null) {
-            return;
-        }
-
-        $alt = $Inline['element']['attributes']['alt'] ?? '';
-        if (preg_match('/^(.*)\|(\d+)(?:x(\d+))?$/s', $alt, $m)) {
-            $Inline['element']['attributes']['alt'] = $m[1];
-            $Inline['element']['attributes']['width'] = $m[2];
-            if (!empty($m[3])) {
-                $Inline['element']['attributes']['height'] = $m[3];
-            }
-        }
-
-        return $Inline;
     }
 
     protected function buildInternalImage(string $file, array $attrs, int $extent)
@@ -1657,6 +2004,23 @@ class PerliteParsedown extends Parsedown
         }
 
         return $this->buildInternalImage($file, $attrs, $extent);
+    }
+
+    # remove "^block-id" markers at the end of lines (outside code blocks); they
+    # are only targets for ![[Note#^block-id]] embeds
+    protected function hideBlockIds(array $lines)
+    {
+        $inFence = false;
+        foreach ($lines as $i => $line) {
+            if (preg_match('/^\s*(```|~~~)/', $line)) {
+                $inFence = !$inFence;
+                continue;
+            }
+            if (!$inFence) {
+                $lines[$i] = preg_replace('/(\S)[ \t]+\^[A-Za-z0-9-]+[ \t]*$/', '$1', $line);
+            }
+        }
+        return $lines;
     }
 
     #
@@ -1953,115 +2317,220 @@ class PerliteParsedown extends Parsedown
             . '</a></div>';
     }
 
-    #
-    # Footnotes (Obsidian / markdown-it style)
-    #   reference:  text[^1]  or  text[^my-note]
-    #   definition: [^1]: footnote text   (indented following lines continue it)
+    # Footnotes
+    # See: https://help.obsidian.md/Editing+and+formatting/Basic+formatting+syntax#Footnotes
 
-    protected function extractFootnoteDefinitions(array $lines)
+    protected function footnoteId($label)
     {
-        $this->footnoteDefinitions = array();
-        $this->footnoteNumbers = array();
-        $this->footnoteRefCounts = array();
-
-        $out = array();
-        $inFence = false;
-        $current = null;
-
-        foreach ($lines as $line) {
-            # don't touch anything inside fenced code blocks
-            if (preg_match('/^\s*(```|~~~)/', $line)) {
-                $inFence = !$inFence;
-                $current = null;
-                $out[] = $line;
-                continue;
-            }
-
-            if (!$inFence && preg_match('/^\[\^([^\]\s]+)\]:[ \t]?(.*)$/', $line, $m)) {
-                $current = $m[1];
-                $this->footnoteDefinitions[$current] = $m[2];
-                continue;
-            }
-
-            # indented continuation lines belong to the previous definition
-            if ($current !== null && preg_match('/^(?: {4}|\t)(.*)$/', $line, $m)) {
-                $this->footnoteDefinitions[$current] .= "\n" . $m[1];
-                continue;
-            }
-
-            $current = null;
-            # hide Obsidian block ids ("text ^my-block"), like Obsidian's reading view
-            if (!$inFence) {
-                $line = preg_replace('/(\S)[ \t]+\^[A-Za-z0-9-]+[ \t]*$/', '$1', $line);
-            }
-            $out[] = $line;
-        }
-
-        return $out;
+        return preg_replace('/[^A-Za-z0-9_-]+/', '-', $label);
     }
 
+    # definition: [^label]: text
+    protected function blockFootnote($Line)
+    {
+        if (preg_match('/^\[\^(.+?)\]:[ ]?(.*)$/', $Line['text'], $matches)) {
+            return array(
+                'label' => $matches[1],
+                'text' => $matches[2],
+                'hidden' => true,
+            );
+        }
+    }
+
+    protected function blockFootnoteContinue($Line, $Block)
+    {
+        // next footnote definition starts
+        if ($Line['text'][0] === '[' && preg_match('/^\[\^(.+?)\]:/', $Line['text'])) {
+            return;
+        }
+
+        // remove footnote indentation, keep nested indentation (e.g. code)
+        $text = preg_replace('/^[ ]{0,4}/', '', $Line['body']);
+
+        if (isset($Block['interrupted'])) {
+            // after an empty line only indented lines belong to the footnote
+            if ($Line['indent'] >= 4) {
+                $Block['text'] .= "\n\n" . $text;
+                unset($Block['interrupted']);
+
+                return $Block;
+            }
+
+            return;
+        }
+
+        // lazy continuation (line directly below)
+        $Block['text'] .= "\n" . $text;
+
+        return $Block;
+    }
+
+    protected function blockFootnoteComplete($Block)
+    {
+        $this->DefinitionData['Footnote'][$Block['label']] = array(
+            'text' => $Block['text'],
+            'count' => 0,
+            'number' => null,
+        );
+
+        return $Block;
+    }
+
+    # reference in text: [^label]
     protected function inlineFootnoteMarker($Excerpt)
     {
-        if (!preg_match('/^\[\^([^\]\s]+)\]/', $Excerpt['text'], $m)) {
+        if (!preg_match('/^\[\^(.+?)\]/', $Excerpt['text'], $matches)) {
             return;
         }
 
-        $id = $m[1];
+        $label = $matches[1];
 
-        # like Obsidian, leave [^x] as plain text if it has no definition
-        if (!isset($this->footnoteDefinitions[$id])) {
+        if (!isset($this->DefinitionData['Footnote'][$label])) {
             return;
         }
 
-        if (!isset($this->footnoteNumbers[$id])) {
-            $this->footnoteNumbers[$id] = count($this->footnoteNumbers) + 1;
-            $this->footnoteRefCounts[$id] = 0;
-        }
-        $this->footnoteRefCounts[$id]++;
+        $Footnote = $this->DefinitionData['Footnote'][$label];
+        $Footnote['count']++;
 
-        $num = $this->footnoteNumbers[$id];
-        $refId = 'fnref-' . $num . ($this->footnoteRefCounts[$id] > 1 ? '-' . $this->footnoteRefCounts[$id] : '');
+        if ($Footnote['number'] === null) {
+            $Footnote['number'] = ++$this->footnoteCount;
+        }
+
+        $this->DefinitionData['Footnote'][$label] = $Footnote;
+
+        $id = $this->footnoteId($label);
 
         return array(
-            'extent' => strlen($m[0]),
-            'markup' => '<sup class="footnote-ref" id="' . $refId . '" data-footnote-id="' . $refId . '">'
-                . '<a href="#fn-' . $num . '" class="footnote-link">[' . $num . ']</a></sup>',
+            'extent' => strlen($matches[0]),
+            'element' => array(
+                'name' => 'sup',
+                'attributes' => array(
+                    'id' => 'fnref-' . $Footnote['count'] . '-' . $id,
+                    'class' => 'footnote-ref',
+                ),
+                'elements' => array(
+                    array(
+                        'name' => 'a',
+                        'text' => '[' . $Footnote['number'] . ']',
+                        'attributes' => array(
+                            'href' => '#fn-' . $id,
+                            'class' => 'footnote-link',
+                        ),
+                    ),
+                ),
+            ),
         );
     }
 
-    protected function buildFootnotesSection()
+    # inline footnote: ^[text]
+    protected function inlineInlineFootnote($Excerpt)
     {
-        if (empty($this->footnoteDefinitions)) {
+        if (!isset($Excerpt['text'][1]) || $Excerpt['text'][1] !== '[') {
+            return;
+        }
+
+        // supports nested brackets, e.g. ^[see [link](note.md)]
+        if (!preg_match('/^\^(\[((?:[^\[\]]++|(?1))*)\])/', $Excerpt['text'], $matches)) {
+            return;
+        }
+
+        $text = trim($matches[2]);
+
+        if ($text === '') {
+            return;
+        }
+
+        // register as regular footnote with generated label
+        $label = 'inline-fn-' . (++$this->inlineFootnoteCount);
+
+        $this->DefinitionData['Footnote'][$label] = array(
+            'text' => $text,
+            'count' => 0,
+            'number' => null,
+        );
+
+        // delegate to regular footnote marker
+        $Inline = $this->inlineFootnoteMarker(array(
+            'text' => '[^' . $label . ']',
+            'context' => '[^' . $label . ']',
+        ));
+
+        if ($Inline === null) {
+            return;
+        }
+
+        // adjust extent to original syntax length
+        $Inline['extent'] = strlen($matches[0]);
+
+        return $Inline;
+    }
+
+    # footnote list at the end of the document
+    protected function buildFootnotes()
+    {
+        if (empty($this->DefinitionData['Footnote'])) {
             return '';
         }
 
-        # referenced footnotes in reference order, then any unreferenced ones
-        $ordered = $this->footnoteNumbers;
-        asort($ordered);
-        foreach (array_keys($this->footnoteDefinitions) as $id) {
-            if (!isset($ordered[$id])) {
-                $ordered[$id] = null;
-            }
+        // only footnotes that are referenced in the text
+        $footnotes = array_filter(
+            $this->DefinitionData['Footnote'],
+            fn($footnote) => $footnote['number'] !== null
+        );
+
+        if (empty($footnotes)) {
+            return '';
         }
 
-        $items = '';
-        foreach ($ordered as $id => $num) {
-            $text = $this->line(trim($this->footnoteDefinitions[$id]));
-            if ($num === null) {
-                $items .= "<li class=\"footnote-item\"><p>" . $text . "</p></li>\n";
-                continue;
+        uasort($footnotes, fn($a, $b) => $a['number'] <=> $b['number']);
+
+        $items = array();
+
+        foreach ($footnotes as $label => $footnote) {
+            $id = $this->footnoteId($label);
+
+            // use lines() instead of text(), text() would reset DefinitionData
+            $content = trim($this->lines(explode("\n", $footnote['text'])), "\n");
+
+            $backLinks = array();
+            for ($i = 1; $i <= $footnote['count']; $i++) {
+                $backLinks[] = '<a href="#fnref-' . $i . '-' . $id . '" class="footnote-backref footnote-link">&#8617;&#65038;</a>';
             }
-            $backrefs = '';
-            for ($i = 1; $i <= $this->footnoteRefCounts[$id]; $i++) {
-                $refId = 'fnref-' . $num . ($i > 1 ? '-' . $i : '');
-                $backrefs .= ' <a href="#' . $refId . '" class="footnote-backref footnote-link">↩︎</a>';
+            $backLinks = implode(' ', $backLinks);
+
+            // place back link(s) inside the last paragraph
+            if (substr($content, -4) === '</p>') {
+                $content = substr_replace($content, '&#160;' . $backLinks . '</p>', -4);
+            } else {
+                $content .= "\n<p>" . $backLinks . '</p>';
             }
-            $items .= '<li id="fn-' . $num . '" class="footnote-item" data-footnote-id="fn-' . $num . '"><p>'
-                . $text . $backrefs . "</p></li>\n";
+
+            $items[] = array(
+                'name' => 'li',
+                'attributes' => array(
+                    'id' => 'fn-' . $id,
+                    'class' => 'footnote-item',
+                ),
+                'rawHtml' => "\n" . $content . "\n",
+                'allowRawHtmlInSafeMode' => true,
+            );
         }
 
-        return "\n<section class=\"footnotes\">\n<hr class=\"footnotes-sep\">\n<ol class=\"footnotes-list\">\n"
-            . $items . "</ol>\n</section>";
+        return "\n" . $this->element(array(
+            'name' => 'section',
+            'attributes' => array('class' => 'footnotes'),
+            'elements' => array(
+                array(
+                    'name' => 'hr',
+                    'attributes' => array('class' => 'footnotes-sep'),
+                ),
+                array(
+                    'name' => 'ol',
+                    'attributes' => array('class' => 'footnotes-list'),
+                    'elements' => $items,
+                ),
+            ),
+        ));
     }
 
     protected function popupIconSvg()
@@ -2073,5 +2542,4 @@ class PerliteParsedown extends Parsedown
         <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
     </svg>';
     }
-
 }

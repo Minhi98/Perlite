@@ -1,119 +1,143 @@
 <?php
 
 /*!
- * Perlite v1.6.1 (https://github.com/secure-77/Perlite)
+ * Perlite v1.6.3 (https://github.com/secure-77/Perlite)
  * Author: sec77 (https://secure77.de)
  * Licensed under MIT (https://github.com/secure-77/Perlite/blob/main/LICENSE)
  */
 
 use Perlite\PerliteParsedown;
 
-// load settings from settings.php if it exists instead of using environment variables
-if (file_exists("settings.php")) {
-	include "settings.php";
+//
+// settings
+//
+// All settings are read from environment variables (e.g. docker compose env_file).
+// Without docker, place a .env file next to the perlite folder (preferred, outside of the web root)
+// or inside the perlite folder. Real environment variables take precedence over the .env file.
+//
+
+// parse a .env file (KEY=VALUE per line, # comments, optional quotes, optional "export " prefix)
+function parseEnvFile($file)
+{
+	$vars = [];
+	$lines = file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+	if ($lines === false)
+		return $vars;
+
+	foreach ($lines as $line) {
+		$line = trim($line);
+		if ($line === '' || $line[0] === '#' || strpos($line, '=') === false)
+			continue;
+
+		[$key, $value] = explode('=', $line, 2);
+		$key = trim(preg_replace('/^export\s+/', '', trim($key)));
+		$value = trim($value);
+
+		if (strlen($value) >= 2 && ($value[0] === '"' || $value[0] === "'") && substr($value, -1) === $value[0]) {
+			// quoted value, keep as is
+			$value = substr($value, 1, -1);
+		} else {
+			// unquoted value, strip inline comments (" # comment")
+			$value = trim(preg_replace('/\s+#.*$/', '', $value));
+		}
+
+		$vars[$key] = $value;
+	}
+	return $vars;
 }
+
+$envFileVars = [];
+$envFileDir = '';
+foreach ([dirname(__DIR__) . '/.env', __DIR__ . '/.env'] as $envFile) {
+	if (is_file($envFile) && is_readable($envFile)) {
+		$envFileVars = parseEnvFile($envFile);
+		$envFileDir = dirname($envFile);
+		break;
+	}
+}
+
+// get a setting, empty values fall back to the default
+function getSetting($key, $default = '')
+{
+	global $envFileVars;
+
+	$value = getenv($key);
+	if ($value === false || $value === '')
+		$value = $envFileVars[$key] ?? '';
+
+	return $value === '' ? $default : $value;
+}
+
+function getBoolSetting($key, $default)
+{
+	$value = getSetting($key);
+	return $value === '' ? $default : filter_var($value, FILTER_VALIDATE_BOOLEAN);
+}
+
+function getListSetting($key, $default)
+{
+	$value = getSetting($key);
+	return $value === '' ? $default : array_map('trim', explode(',', $value));
+}
+
 
 //
 // default settings and variables
 //
 
-
 $avFiles = array();
 
-// replace with your Vault Folder
-if (empty($rootDir))
-	$rootDir = empty(getenv('NOTES_PATH')) ? 'Demo' : getenv('NOTES_PATH');
-$vaultName = $rootDir;
+// --- General Settings ---
+$rootDir = rtrim(getSetting('NOTES_PATH', 'Demo'), '/\\');
 
-//if (empty($uriPath)) $uriPath = empty(getenv('URI_PATH')) ? '/perlite/' : getenv('URI_PATH');
-if (empty($uriPath))
-	$uriPath = empty(getenv('URI_PATH')) ? '/' : getenv('URI_PATH');
-
-
-
-// hide folders
-if (empty($hideFolders))
-	$hideFolders = getenv('HIDE_FOLDERS');
-
-// allow access to md files in hidden folders
-if (!isset($hiddenFileAccess))
-	$hiddenFileAccess = empty(getenv('HIDDEN_FILE_ACCESS')) ? false : filter_var(getenv('HIDDEN_FILE_ACCESS'), FILTER_VALIDATE_BOOLEAN);
-
-// use absolut paths instead of relative paths
-if (!isset($absolutePath))
-	$absolutePath = empty(getenv('ABSOLUTE_PATHS')) ? false : filter_var(getenv('ABSOLUTE_PATHS'), FILTER_VALIDATE_BOOLEAN);
-
-// Meta Tags infos
-if (empty($siteTitle))
-	$siteTitle = empty(getenv('SITE_TITLE')) ? 'Perlite' : getenv('SITE_TITLE');
-if (empty($siteType))
-	$siteType = empty(getenv('SITE_TYPE')) ? 'article' : getenv('SITE_TYPE');
-if (empty($siteImage))
-	$siteImage = empty(getenv('SITE_IMAGE')) ? 'https://raw.githubusercontent.com/secure-77/Perlite/main/screenshots/screenshot.png' : getenv('SITE_IMAGE');
-if (!isset($siteURL))
-	$siteURL = empty(getenv('SITE_URL')) ? '' : getenv('SITE_URL');  // optional, no demo-site fallback
-if (empty($siteLogo))
-	$siteLogo = getenv("SITE_LOGO");
-if (empty($siteDescription))
-	$siteDescription = empty(getenv('SITE_DESC')) ? 'A web based markdown viewer optimized for Obsidian Notes' : getenv('SITE_DESC');
-if (empty($siteName))
-	$siteName = empty(getenv('SITE_NAME')) ? 'Perlite Demo' : getenv('SITE_NAME');
-if (empty($siteHomepage))
-	$siteHomepage = empty(getenv("SITE_HOMEPAGE")) ? $siteURL : getenv("SITE_HOMEPAGE");  // empty = no homepage icon
-if (empty($siteGithub))
-	$siteGithub = getenv("SITE_GITHUB");
-if (!isset($siteTwitter))
-	$siteTwitter = getenv('SITE_TWITTER');
-
-// Use frontmatter 'title' or top level h1 instead of filename
-if (!isset($useZettelkastenFilenames)) {
-    $useZettelkastenFilenames = empty(getenv('ZETTELKASTEN_FILENAMES_ENABLED')) ? false : filter_var(getenv('ZETTELKASTEN_FILENAMES_ENABLED'), FILTER_VALIDATE_BOOLEAN);
+// NOTES_PATH can also be the docker compose host path (e.g. ./perlite/Demo), relative to the .env file,
+// use it as folder relative to the perlite folder if it is located inside
+if ($rootDir !== '' && !is_dir(__DIR__ . '/' . $rootDir) && $envFileDir !== '') {
+	$notesPath = realpath($envFileDir . '/' . $rootDir);
+	$perlitePath = realpath(__DIR__);
+	if ($notesPath !== false && strpos($notesPath, $perlitePath . DIRECTORY_SEPARATOR) === 0)
+		$rootDir = str_replace('\\', '/', substr($notesPath, strlen($perlitePath) + 1));
 }
 
-// Temp PATH for graph linking temp files
-if (empty($tempPath))
-	$tempPath = empty(getenv('TEMP_PATH')) ? sys_get_temp_dir() : getenv('TEMP_PATH');
+$vaultName = getSetting('VAULT_NAME', mb_basename($rootDir));
+$index = getSetting('HOME_FILE', 'README');
+$siteTitle = getSetting('SITE_TITLE', 'Perlite');
 
-// line breaks
-if (!isset($lineBreaks))
-	$lineBreaks = empty(getenv('LINE_BREAKS')) ? true : filter_var(getenv('LINE_BREAKS'), FILTER_VALIDATE_BOOLEAN);
+// --- Frontend Settings ---
+$lineBreaks = getBoolSetting('LINE_BREAKS', true);
+$disablePopHovers = getBoolSetting('DISABLE_POP_HOVER', false);
+$showTOC = getBoolSetting('SHOW_TOC', true);
+$showLocalGraph = getBoolSetting('SHOW_LOCAL_GRAPH', true);
+$font_size = getSetting('FONT_SIZE', '15');
+$hideFolders = getSetting('HIDE_FOLDERS');
+$niceLinks = getBoolSetting('NICE_LINKS', true);
 
-// nice links
-if (!isset($niceLinks))
-	$niceLinks = empty(getenv('NICE_LINKS')) ? true : filter_var(getenv('NICE_LINKS'), FILTER_VALIDATE_BOOLEAN);
+// --- Advanced Settings ---
+$hiddenFileAccess = getBoolSetting('HIDDEN_FILE_ACCESS', false);
+$absolutePath = getBoolSetting('ABSOLUTE_PATHS', false);
+$uriPath = getSetting('URI_PATH', '/');
+$htmlSafeMode = getBoolSetting('HTML_SAFE_MODE', true);
+$useZettelkastenFilenames = getBoolSetting('ZETTELKASTEN_FILENAMES_ENABLED', false);
+$highlightJSLangs = getListSetting('HIGHLIGHTJS_LANGS', ['powershell']);
+$allowedFileLinkTypes = getListSetting('ALLOWED_FILE_LINK_TYPES', ['pdf', 'mp4']);
+$treeVisibleExtensions = array_filter(array_map('strtolower', getListSetting('TREE_VISIBLE_EXTENSIONS', [])), 'strlen');
+$canvasIframeEmbeds = strtolower(getSetting('CANVAS_IFRAME_EMBEDS', 'click'));
+if (!in_array($canvasIframeEmbeds, ['off', 'click', 'auto'], true))
+	$canvasIframeEmbeds = 'click';
+$tempPath = getSetting('TEMP_PATH', sys_get_temp_dir());
 
+// --- Metadata Settings ---
+$siteType = getSetting('SITE_TYPE', 'article');
+$siteImage = getSetting('SITE_IMAGE', 'https://raw.githubusercontent.com/secure-77/Perlite/main/screenshots/screenshot.png');
+$siteURL = getSetting('SITE_URL', '');  // optional: empty = no homepage icon / og:url (no demo-site fallback)
+$siteDescription = getSetting('SITE_DESC', 'A web based markdown viewer optimized for Obsidian Notes');
+$siteName = getSetting('SITE_NAME', 'Perlite Demo');
 
-// file types
-if (empty($allowedFileLinkTypes))
-	$allowedFileLinkTypes = empty(getenv('ALLOWED_FILE_LINK_TYPES')) ? ['pdf', 'mp4'] : explode(",", getenv('ALLOWED_FILE_LINK_TYPES'));
-
-// highlight.js languages
-if (empty($highlightJSLangs))
-	$highlightJSLangs = empty(getenv('HIGHLIGHTJS_LANGS')) ? ['powershell'] : explode(",", getenv('HIGHLIGHTJS_LANGS'));
-
-// disable PopHovers
-if (!isset($disablePopHovers))
-	$disablePopHovers = empty(getenv('DISABLE_POP_HOVER')) ? false : filter_var(getenv('DISABLE_POP_HOVER'), FILTER_VALIDATE_BOOLEAN);
-
-// show TOC
-if (!isset($showTOC))
-	$showTOC = empty(getenv('SHOW_TOC')) ? true : filter_var(getenv('SHOW_TOC'), FILTER_VALIDATE_BOOLEAN);
-
-// show local Graph
-if (!isset($showLocalGraph))
-	$showLocalGraph = empty(getenv('SHOW_LOCAL_GRAPH')) ? true : filter_var(getenv('SHOW_LOCAL_GRAPH'), FILTER_VALIDATE_BOOLEAN);
-
-// Set home page from env/settings
-if (empty($index))
-	$index = empty(getenv('HOME_FILE')) ? "README" : getenv('HOME_FILE');
-
-// set default font size
-if (empty($font_size))
-	$font_size = empty(getenv('FONT_SIZE')) ? "15" : getenv('FONT_SIZE');
-
-// Set safe mode from env/settings
-if (!isset($htmlSafeMode))
-	$htmlSafeMode = empty(getenv('HTML_SAFE_MODE')) ? true : filter_var(getenv('HTML_SAFE_MODE'), FILTER_VALIDATE_BOOLEAN);
+// --- Profile Settings ---
+$siteLogo = getSetting('SITE_LOGO');
+$siteHomepage = getSetting('SITE_HOMEPAGE', $siteURL);
+$siteGithub = getSetting('SITE_GITHUB');
+$siteTwitter = getSetting('SITE_TWITTER');
 
 // Custom Site Section
 if (!isset($customSection))
@@ -190,7 +214,7 @@ if (strcmp($hideFolders, '')) {
 if (!strcmp($rootDir, "")) {
 
 	$rootDir = getcwd();
-	$vaultName = mb_basename($rootDir);
+	$vaultName = getSetting('VAULT_NAME', mb_basename($rootDir));
 	$startDir = "";
 } else {
 	$startDir = $rootDir;
@@ -210,6 +234,9 @@ function menu($dir, $folder = '')
 	global $hiddenFileAccess;
 	global $avFiles;
   global $useZettelkastenFilenames;
+	global $treeVisibleExtensions;
+	global $uriPath;
+	global $startDir;
 	$html = '';
 	// get all files from current dir
 	$files = glob($dir . '/*');
@@ -280,6 +307,38 @@ function menu($dir, $folder = '')
           <div class="nav-file-title perlite-link" onclick="getContent(\'' . $pathCleanForJS . '\');" id="' . htmlspecialchars($elementId) . '">
               <div class="nav-file-title-content">' . htmlspecialchars($displayTitle) . '</div>
           </div>
+      </div>
+      ';
+    } else if (isCanvasFile($file)) {
+      // canvas file, stored with extension to not collide with a note of the same name
+      $urlClickPath = '/' . getFileInfos($file)[0];
+      array_push($avFiles, $urlClickPath);
+      $pathCleanForJS = rawurlencode($urlClickPath);
+
+      $elementId = 'fileid-' . preg_replace('/[^A-Za-z0-9\-_]/', '_', $urlClickPath);
+      $elementId = str_replace('/', '_', $elementId);
+
+      $html .= '
+      <div class="tree-item nav-file">
+          <div class="nav-file-title perlite-link" onclick="getContent(\'' . $pathCleanForJS . '\');" id="' . htmlspecialchars($elementId) . '">
+              <div class="nav-file-title-content">' . htmlspecialchars(pathinfo($file, PATHINFO_FILENAME)) . '</div>
+              <div class="nav-file-tag">canvas</div>
+          </div>
+      </div>
+      ';
+    } else if (isTreeVisibleFile($file)) {
+      // non md file, link it for download (served directly by the webserver)
+      $relativePath = getFileInfos($file)[0];
+      $fileName = mb_basename($file);
+      $urlPath = ($startDir !== '' ? $startDir . '/' : '') . $relativePath;
+      $fileURL = $uriPath . implode('/', array_map('rawurlencode', explode('/', $urlPath)));
+
+      $html .= '
+      <div class="tree-item nav-file">
+          <a class="nav-file-title perlite-download-link" href="' . htmlspecialchars($fileURL) . '" download="' . htmlspecialchars($fileName) . '">
+              <div class="nav-file-title-content">' . htmlspecialchars(pathinfo($fileName, PATHINFO_FILENAME)) . '</div>
+              <div class="nav-file-tag">' . htmlspecialchars(strtolower(pathinfo($fileName, PATHINFO_EXTENSION))) . '</div>
+          </a>
       </div>
       ';
     }
@@ -397,6 +456,24 @@ function isMDFile($file)
 	return false;
 }
 
+// check if file is an obsidian canvas file
+function isCanvasFile($file)
+{
+	return strtolower(pathinfo($file, PATHINFO_EXTENSION)) === 'canvas';
+}
+
+// check if a non md file should be listed in the navigation (TREE_VISIBLE_EXTENSIONS)
+function isTreeVisibleFile($file)
+{
+	global $treeVisibleExtensions;
+
+	if (empty($treeVisibleExtensions) || !is_file($file))
+		return false;
+
+	$ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+	return $ext !== '' && $ext !== 'md' && in_array($ext, $treeVisibleExtensions, true);
+}
+
 function getFileInfos($file)
 {
 
@@ -508,11 +585,11 @@ function getfullGraph($rootDir)
 {
 
 	global $tempPath;
-	global $vaultName;
 
+	$vaultFolder = mb_basename($rootDir);
 	$jsonMetadaFile = $rootDir . '/metadata.json';
-	$metadaTempFile = $tempPath . '/metadata_' . $vaultName . '.temp';
-	$metadaTempFileSum = $tempPath . '/metadata_' . $vaultName . '.md5';
+	$metadaTempFile = $tempPath . '/metadata_' . $vaultFolder . '.temp';
+	$metadaTempFileSum = $tempPath . '/metadata_' . $vaultFolder . '.md5';
 
 
 

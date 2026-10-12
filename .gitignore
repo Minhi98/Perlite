@@ -13,6 +13,7 @@ perlite/Demo/.obsidian/workspace.json
 perlite/logo2.svg
 Thumbs.db
 perlite-dev
+perlite/Notes
 _Notes
 perlite/.scripts/vendor
 perlite/.scripts/release.sh
@@ -20,3 +21,6 @@ perlite/.scripts/canvas.js
 perlite/sec.jpg
 perlite/Demo/Demo Documents/test
 perlite/Demo/Demo Documents/test/*
+
+# local settings
+.env
