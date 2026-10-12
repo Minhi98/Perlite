@@ -619,7 +619,7 @@ body:not(.perlite-show-properties) .mod-header:not(.mod-ui):has(> .metadata-cont
 #mytags .tag {
   white-space: nowrap;
 }
-/* "Hide Tags" setting */
-body.perlite-hide-tags #tags_container {
+/* tags list: hidden unless "Show Tags" is enabled in the settings */
+body:not(.perlite-show-tags) #tags_container {
   display: none !important;
 }

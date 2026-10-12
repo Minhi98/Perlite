@@ -48,7 +48,7 @@
 - **Trailing slash:** page URLs ending in `/` (e.g. `/Folder/Note/`) open the page instead of a blank one.
 - **Edit in Obsidian:** the edit button sends the note's full path (`file=Folder/Note`), so notes with the same name (e.g. several `index.md`) open the right one.
 - **Remembered sidebars:** whether the left and right sidebars are collapsed is saved in the browser (localStorage) and restored on every page load, desktop layout only. A small script in `index.php`'s `<head>` applies it before the page is drawn, so there's no flash.
-- **Sidebar tags:** the right sidebar lists each of the note's tags once (case-insensitive; text and front matter, not embedded notes or hover previews) and wraps them onto several lines. **Settings → Hide Tags** hides the list (off by default, remembered per browser).
+- **Sidebar tags:** Fixed styling under themes like Elysian and added a setting to toggle showing Tags in the side bar.
 
 ### Styles (`perlite.css`)
 - **Collapsed callouts:** always hidden, even when the theme sets a `display` on callout content (ITS columns and cards).

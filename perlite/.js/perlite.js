@@ -1688,10 +1688,10 @@ $(document).ready(function () {
     $('.metadata-container').addClass('is-collapsed');
   }
 
-  // tags in the right sidebar: shown unless hidden in the settings
-  if (localStorage.getItem('hideTags') === 'true') {
-    $('.hideTagsOption').addClass('is-enabled')
-    $('body').addClass('perlite-hide-tags')
+  // tags in the right sidebar: hidden unless enabled in the settings
+  if (localStorage.getItem('showTags') === 'true') {
+    $('.showTagsOption').addClass('is-enabled')
+    $('body').addClass('perlite-show-tags')
   }
 
   // front matter properties box: hidden unless enabled in the settings
@@ -2231,12 +2231,12 @@ $(document).ready(function () {
 
 
   // collapse Metadata Option
-  $('.hideTagsOption').click(function (e) {
+  $('.showTagsOption').click(function (e) {
     e.preventDefault();
-    var hide = !$('.hideTagsOption').hasClass('is-enabled');
-    $('.hideTagsOption').toggleClass('is-enabled', hide);
-    $('body').toggleClass('perlite-hide-tags', hide);
-    localStorage.setItem('hideTags', hide ? 'true' : 'false');
+    var show = !$('.showTagsOption').hasClass('is-enabled');
+    $('.showTagsOption').toggleClass('is-enabled', show);
+    $('body').toggleClass('perlite-show-tags', show);
+    localStorage.setItem('showTags', show ? 'true' : 'false');
   });
 
   $('.showPropertiesOption').click(function (e) {
