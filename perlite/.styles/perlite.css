@@ -137,8 +137,9 @@ h1, h2, h3, h4 {
   display: none !important;
 }
 
-/* title-only callouts (e.g. ITS kith) have no content box in Obsidian */
-.callout-content:empty {
+/* title-only callouts (e.g. ITS kith) have no content box in Obsidian
+   (the box may contain only whitespace, so match "no child elements") */
+.callout-content:not(:has(*)) {
   display: none;
 }
 
@@ -593,4 +594,10 @@ a.perlite-download-link:hover {
   body.perlite-print-bw a {
     text-decoration: underline !important;
   }
+}
+
+/* front matter properties box: hidden unless "Show Properties" is enabled in the
+   settings (.mod-header.mod-ui is the page title wrapper and stays visible) */
+body:not(.perlite-show-properties) .mod-header:not(.mod-ui):has(> .metadata-container) {
+  display: none !important;
 }

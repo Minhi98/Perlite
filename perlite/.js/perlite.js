@@ -1680,6 +1680,12 @@ $(document).ready(function () {
     $('.metadata-container').addClass('is-collapsed');
   }
 
+  // front matter properties box: hidden unless enabled in the settings
+  if (localStorage.getItem('showProperties') === 'true') {
+    $('.showPropertiesOption').addClass('is-enabled')
+    $('body').addClass('perlite-show-properties')
+  }
+
   // light mode
   if (localStorage.getItem('lightMode') === 'true') {
     $('body').removeClass('theme-dark')
@@ -2211,6 +2217,14 @@ $(document).ready(function () {
 
 
   // collapse Metadata Option
+  $('.showPropertiesOption').click(function (e) {
+    e.preventDefault();
+    var show = !$('.showPropertiesOption').hasClass('is-enabled');
+    $('.showPropertiesOption').toggleClass('is-enabled', show);
+    $('body').toggleClass('perlite-show-properties', show);
+    localStorage.setItem('showProperties', show ? 'true' : 'false');
+  });
+
   $('.metadataOption').click(function (e) {
     e.preventDefault();
     target = $('.metadataOption')

@@ -1015,6 +1015,17 @@ $jsonGraphData = getfullGraph($rootDir);
                     </div>
                     <div class="setting-item mod-toggle">
                         <div class="setting-item-info">
+                            <div class="setting-item-name">Show Properties</div>
+                            <div class="setting-item-description">Show the Front Matter properties at the top of
+                                notes (hidden by default).</div>
+                        </div>
+                        <div class="setting-item-control">
+                            <div class="checkbox-container showPropertiesOption"><input type="checkbox" tabindex="0">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="setting-item mod-toggle">
+                        <div class="setting-item-info">
                             <div class="setting-item-name">Collapse Metadata</div>
                             <div class="setting-item-description">Collapse the Front Matter Metadata contents by
                                 default.</div>

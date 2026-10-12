@@ -111,12 +111,13 @@ class PerliteParsedown extends Parsedown
             $yamlBlockArray = array_slice($lines, 0, $endIndex);
             $yamlBlockText = implode("\n", $yamlBlockArray);
             $lines = array_slice($lines, $endIndex + 1, count($lines));
-            # the properties box is not rendered (it did nothing on the site);
-            # the "title" property is passed on as the page's display title
+            $parsedYamlBlockText = $this->yamlFrontmatter($yamlBlockText);
+            # the "title" property is also passed on as the page's display title
+            # (the properties box itself is hidden unless enabled in the settings)
             $noteTitle = $this->frontmatterTitle($yamlBlockText);
             if ($noteTitle !== '') {
                 $parsedYamlBlockText = '<div class="perlite-note-title" style="display:none" data-title="'
-                    . self::escape($noteTitle) . '"></div>';
+                    . self::escape($noteTitle) . '"></div>' . $parsedYamlBlockText;
             }
         }
 
@@ -1555,8 +1556,7 @@ class PerliteParsedown extends Parsedown
             return;
         }
 
-        # inside tables Obsidian writes the alias pipe escaped: [[Note\|Alias]]
-        $raw = str_replace('\\|', '|', $matches[1]);
+        $raw = $matches[1];
 
         // Split Obsidian-style: file|label|popup
         // Strip backslash used to escape | in Markdown tables (e.g. [[file.md\|Label]])
@@ -1632,8 +1632,7 @@ class PerliteParsedown extends Parsedown
                     'name' => 'a',
                     'text' => $linkText,
                     'attributes' => array(
-                        # only the heading part: [[#Heading|alias]] -> #Heading
-                        'href' => '#' . str_replace(' ', '-', ltrim($linkFile, '#')),
+                        'href' => '#' . ltrim($linkFile, '#'),
                         'class' => 'internal-link' . $popupClass,
                     ),
                 ),
