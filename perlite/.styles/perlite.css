@@ -163,6 +163,12 @@ body.show-inline-title .popover.hover-popover:not(.is-section) .inline-title.pop
 .popover.hover-popover.is-section .inline-title.pophover-title {
   display: none;
 }
+/* ...and the heading it starts with has no space above it (themes give headings
+   a top margin/padding to separate them from the text before) */
+.popover.hover-popover .perlite-section-start {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
 
 span.cm-highlight {
   background-color: var(--text-highlight-bg);

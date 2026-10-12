@@ -196,6 +196,8 @@ function showOnlySection(container, anchor) {
     return false;
   }
   var level = parseInt(target.tagName.substring(1));
+  // the preview starts with this heading: no space above it (see perlite.css)
+  target.classList.add('perlite-section-start');
   var keep = [target];
   for (var el = target.nextElementSibling; el; el = el.nextElementSibling) {
     if (/^H[1-6]$/.test(el.tagName) && parseInt(el.tagName.substring(1)) <= level) {
