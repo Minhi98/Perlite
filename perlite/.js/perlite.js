@@ -366,13 +366,21 @@ function getContent(str, home = false, popHover = false, anchor = "") {
 
           }
 
-          // add Tag section
+          // add Tag section: each tag of this note once (text and front matter,
+          // not embedded notes or hover previews), case-insensitive like Obsidian
           $('#mytags').html("")
-          $('.tag').each(function (index) {
-            const count = index + 1;
-            const originalHTML = $(this).prop('outerHTML');
-            const countTag = '<div class="tree-item-flair-outer"><span class="tree-item-flair" id="nodeCount">' + count + '</span></div>';
-            $('#mytags').append(originalHTML);
+          var seenTags = {};
+          $('#mdContent .tag').each(function () {
+            if ($(this).closest('.markdown-embed').length) {
+              return;
+            }
+            var label = $(this).text().trim();
+            var key = label.toLowerCase();
+            if (!label || seenTags[key]) {
+              return;
+            }
+            seenTags[key] = true;
+            $('#mytags').append($(this).clone().text(label).attr('href', '#' + label.replace(/^#/, '')), ' ');
           });
 
           // hide them when no tags are found
@@ -1680,6 +1688,12 @@ $(document).ready(function () {
     $('.metadata-container').addClass('is-collapsed');
   }
 
+  // tags in the right sidebar: shown unless hidden in the settings
+  if (localStorage.getItem('hideTags') === 'true') {
+    $('.hideTagsOption').addClass('is-enabled')
+    $('body').addClass('perlite-hide-tags')
+  }
+
   // front matter properties box: hidden unless enabled in the settings
   if (localStorage.getItem('showProperties') === 'true') {
     $('.showPropertiesOption').addClass('is-enabled')
@@ -2217,6 +2231,14 @@ $(document).ready(function () {
 
 
   // collapse Metadata Option
+  $('.hideTagsOption').click(function (e) {
+    e.preventDefault();
+    var hide = !$('.hideTagsOption').hasClass('is-enabled');
+    $('.hideTagsOption').toggleClass('is-enabled', hide);
+    $('body').toggleClass('perlite-hide-tags', hide);
+    localStorage.setItem('hideTags', hide ? 'true' : 'false');
+  });
+
   $('.showPropertiesOption').click(function (e) {
     e.preventDefault();
     var show = !$('.showPropertiesOption').hasClass('is-enabled');

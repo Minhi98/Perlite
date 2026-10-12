@@ -1015,6 +1015,16 @@ $jsonGraphData = getfullGraph($rootDir);
                     </div>
                     <div class="setting-item mod-toggle">
                         <div class="setting-item-info">
+                            <div class="setting-item-name">Hide Tags</div>
+                            <div class="setting-item-description">Hide the tags list in the right sidebar.</div>
+                        </div>
+                        <div class="setting-item-control">
+                            <div class="checkbox-container hideTagsOption"><input type="checkbox" tabindex="0">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="setting-item mod-toggle">
+                        <div class="setting-item-info">
                             <div class="setting-item-name">Show Properties</div>
                             <div class="setting-item-description">Show the Front Matter properties at the top of
                                 notes (hidden by default).</div>

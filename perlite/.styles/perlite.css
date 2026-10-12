@@ -601,3 +601,25 @@ a.perlite-download-link:hover {
 body:not(.perlite-show-properties) .mod-header:not(.mod-ui):has(> .metadata-container) {
   display: none !important;
 }
+
+/* tags in the right sidebar wrap onto several lines instead of running off-screen */
+#tags_container .tree-item-self {
+  display: block;
+  white-space: normal;
+}
+#mytags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  max-width: 100%;
+}
+#mytags .tag {
+  white-space: nowrap;
+}
+/* "Hide Tags" setting */
+body.perlite-hide-tags #tags_container {
+  display: none !important;
+}
