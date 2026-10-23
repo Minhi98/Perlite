@@ -113,9 +113,8 @@ img {
   padding-top: 0px !important;
 }
 
-h1, h2, h3, h4 {
-  padding-top: 30px;
-}
+/* (no extra padding above headings: Obsidian's own heading spacing, which
+   themes adjust, applies as it does in Obsidian) */
 
 .sidebar-top h3{
   padding-top: 0px !important;
