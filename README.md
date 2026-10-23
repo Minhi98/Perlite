@@ -82,6 +82,14 @@
 - Leaflet 1.9.4, js-yaml and Font Awesome 5 (the plugin's icon set) are included and only loaded on pages with a map.
 - `perlite/Dockerfile` copies `leaflet.php` into the image (the upstream Dockerfile copies each PHP file by name).
 
+### Quartz-style graph (`.js/graph/`)
+- **Graph view:** the graph of [Quartz](https://github.com/jackyzha0/quartz) (MIT), ported to Perlite: D3 physics with PixiJS (WebGL) drawing. Nodes grow with their number of links, labels fade in as you zoom, hovering highlights a note's connections, tags are ring-shaped nodes, and pages you've visited get their own colour (remembered per browser).
+- **Local graph:** in the right sidebar (`SHOW_LOCAL_GRAPH=true`), showing the current note and its direct links; its corner button opens the global graph.
+- **Global graph:** all notes, over the page (radial layout, unrelated notes dim on hover). Opened from the graph button in the left ribbon, the local graph's corner button or **Ctrl/Cmd + G**; closed with Escape or a click outside.
+- Clicking a note opens it (Ctrl/Cmd-click: new tab); clicking a tag searches for it. Colours come from the theme's graph colours (`--graph-node`, `--graph-node-focused`, `--graph-node-tag`, `--graph-line`, `--graph-text`) and follow light / dark mode.
+- **Settings → Quartz Graph** (on by default, remembered per browser): off brings back Perlite's original graph and its graph settings.
+- Uses the same data as before (`metadata.json` from the Metadata Extractor plugin). D3 7.9 and PixiJS 8.6 are included and only loaded when a graph is shown.
+
 ### Dataview (`perlite.js`, `helper.php`)
 - **Queries:** use the [Dataview Serializer](https://github.com/dsebastien/obsidian-dataview-serializer) plugin in Obsidian. It runs your queries (`LIST`, `TABLE`, `TASK`, inline `=` expressions and DataviewJS) with Dataview and writes the results into the note as Markdown between HTML comments, which Perlite shows like any other content. Serializer's links (shortest name, vault path with `.md`, or Markdown links) resolve to the right notes.
 - **Unconverted queries:** ```` ```dataview ```` and ```` ```dataviewjs ```` blocks are hidden, since Perlite can't run them. Convert them with Serializer's "Convert … Dataview queries" commands (DataviewJS by wrapping the code in `<!-- DataviewJSToSerialize: … -->`). Inline `` `=expression` `` queries stay as code until converted.

@@ -1440,6 +1440,89 @@ function setLinkedMentionsCount(count) {
   flair.closest('.tree-item-self').css('display', count > 0 ? '' : 'none');
 }
 
+/**
+ * Quartz-style graph (default) or Perlite's original graph (Settings → Quartz graph off).
+ * D3, PixiJS and .js/graph/perlite-graph.js are loaded the first time a graph is shown.
+ */
+var perliteGraphPath = "";
+var perliteGraphLoading = null;
+
+function useQuartzGraph() {
+  return localStorage.getItem('graphStyle') !== 'perlite';
+}
+
+function loadQuartzGraph() {
+  if (window.PerliteQuartzGraph) {
+    return Promise.resolve(window.PerliteQuartzGraph);
+  }
+  if (perliteGraphLoading) {
+    return perliteGraphLoading;
+  }
+  var js = function (src) {
+    return new Promise(function (resolve, reject) {
+      var script = document.createElement('script');
+      script.src = uriPath + '.js/graph/' + src;
+      script.onload = function () { resolve(); };
+      script.onerror = function () { reject(new Error('Could not load ' + src)); };
+      document.head.appendChild(script);
+    });
+  };
+  perliteGraphLoading = js('d3.min.js')
+    .then(function () { return js('pixi.min.js'); })
+    .then(function () { return js('perlite-graph.js'); })
+    .then(function () {
+      window.PerliteQuartzGraph.setCallbacks({ open: openGraphNode });
+      return window.PerliteQuartzGraph;
+    })
+    .catch(function (e) {
+      perliteGraphLoading = null;
+      throw e;
+    });
+  return perliteGraphLoading;
+}
+
+// a node was clicked: open the note, or search for the tag (like Perlite's graph)
+function openGraphNode(slug, evt) {
+  if (window.PerliteQuartzGraph) {
+    window.PerliteQuartzGraph.closeGlobal();
+  }
+  if (slug.indexOf('tags/') === 0) {
+    var tag = '#' + slug.substring(5);
+    $('.workspace-tab-header[data-type="search"]').click();
+    $('*[type="search"]').val(tag);
+    search(tag);
+    return;
+  }
+  var url = uriPath + slugURL(encodeURIComponent('/' + slug));
+  if (evt && (evt.ctrlKey || evt.metaKey)) {
+    window.open(url, '_blank');
+  } else {
+    window.open(url, '_self');
+  }
+}
+
+function graphSlug(path) {
+  return String(path || '').replace(/^\//, '');
+}
+
+function renderQuartzLocalGraph() {
+  $('body').addClass('perlite-quartz-graph-mode');
+  var host = document.getElementById('mynetwork');
+  loadQuartzGraph().then(function (graph) {
+    graph.renderLocal(host, graphSlug(perliteGraphPath));
+  }).catch(function (e) {
+    console.error(e);
+  });
+}
+
+function toggleQuartzGlobalGraph() {
+  loadQuartzGraph().then(function (graph) {
+    graph.toggleGlobal(graphSlug(perliteGraphPath));
+  }).catch(function (e) {
+    console.error(e);
+  });
+}
+
 function renderGraph(modal, path = "", filter_emptyNodes = false, show_tags = true, sizeDepsOnConns = false) {
 
   // start each page at 0 (hidden) so a page without graph data never shows the previous page's count
@@ -1485,7 +1568,14 @@ function renderGraph(modal, path = "", filter_emptyNodes = false, show_tags = tr
 
   // cancel graph display if no node was found
   if (currId == -1) {
+    if (!modal && window.PerliteQuartzGraph) {
+      window.PerliteQuartzGraph.clearLocal(document.getElementById('mynetwork'));
+    }
     return;
+  }
+
+  if (!modal) {
+    perliteGraphPath = path;
   }
 
   // Graph Defaults
@@ -1766,6 +1856,12 @@ function renderGraph(modal, path = "", filter_emptyNodes = false, show_tags = tr
 
     // update linked mentions
     setLinkedMentionsCount(Math.max(0, nodes.length - 1));
+
+    if (useQuartzGraph()) {
+      renderQuartzLocalGraph();
+      return;
+    }
+    $('body').removeClass('perlite-quartz-graph-mode');
 
     var container = document.getElementById('mynetwork');
     network = new vis.Network(container, data, options);
@@ -2098,6 +2194,11 @@ $(document).ready(function () {
   if (localStorage.getItem('Metadata') === 'hide') {
     $('.metadataOption').addClass('is-enabled')
     $('.metadata-container').addClass('is-collapsed');
+  }
+
+  // graph style: Quartz (default) or Perlite's original graph
+  if (!useQuartzGraph()) {
+    $('.quartzGraphOption').removeClass('is-enabled')
   }
 
   // tags in the right sidebar: hidden unless enabled in the settings
@@ -2645,6 +2746,24 @@ $(document).ready(function () {
     localStorage.setItem('showTags', show ? 'true' : 'false');
   });
 
+  $('.quartzGraphOption').click(function (e) {
+    e.preventDefault();
+    var quartz = !$('.quartzGraphOption').hasClass('is-enabled');
+    $('.quartzGraphOption').toggleClass('is-enabled', quartz);
+    localStorage.setItem('graphStyle', quartz ? 'quartz' : 'perlite');
+    // redraw the local graph in the chosen style
+    if (window.PerliteQuartzGraph) {
+      window.PerliteQuartzGraph.closeGlobal();
+      window.PerliteQuartzGraph.clearLocal(document.getElementById('mynetwork'));
+    } else {
+      $('#mynetwork').empty();
+    }
+    $('body').toggleClass('perlite-quartz-graph-mode', quartz);
+    if (perliteGraphPath) {
+      renderGraph(false, encodeURIComponent(perliteGraphPath));
+    }
+  });
+
   $('.showPropertiesOption').click(function (e) {
     e.preventDefault();
     var show = !$('.showPropertiesOption').hasClass('is-enabled');
@@ -2680,6 +2799,12 @@ $(document).ready(function () {
   // open Graph
   $('.clickable-icon.side-dock-ribbon-action[aria-label="Open graph view"]').click(function (e) {
     e.preventDefault();
+
+    // Quartz graph: the global graph opens over the page
+    if (useQuartzGraph()) {
+      toggleQuartzGlobalGraph();
+      return;
+    }
 
     str = document.getElementsByClassName('perlite-link-active');
     isMobile();
@@ -3142,8 +3267,34 @@ $(document).ready(function () {
     } else {
       localStorage.setItem("showLocalGraph", "true")
       $('#localGraph').css('display', 'inline')
+      if (useQuartzGraph() && perliteGraphPath) {
+        renderQuartzLocalGraph();
+      }
     }
   });
+
+  // Quartz graph: Ctrl/Cmd + G opens / closes the global graph
+  $(document).on('keydown', function (e) {
+    if ((e.key === 'g' || e.key === 'G') && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && useQuartzGraph()) {
+      if ($("#allGraphNodes").length == 0) {
+        return;
+      }
+      e.preventDefault();
+      toggleQuartzGlobalGraph();
+    }
+  });
+
+  // Quartz graph: redraw with the new colours when light / dark mode changes
+  var graphThemeClass = $('body').hasClass('theme-dark');
+  new MutationObserver(function () {
+    var dark = $('body').hasClass('theme-dark');
+    if (dark !== graphThemeClass) {
+      graphThemeClass = dark;
+      if (useQuartzGraph() && window.PerliteQuartzGraph) {
+        window.PerliteQuartzGraph.rerender(document.getElementById('mynetwork'));
+      }
+    }
+  }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
   $('.clickable-icon.view-action[aria-label="Open Tags"]').click(function (e) {
 

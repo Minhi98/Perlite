@@ -1028,6 +1028,17 @@ $jsonGraphData = getfullGraph($rootDir);
                     </div>
                     <div class="setting-item mod-toggle">
                         <div class="setting-item-info">
+                            <div class="setting-item-name">Quartz Graph</div>
+                            <div class="setting-item-description">Use the Quartz-style graph (local graph in the right
+                                sidebar, global graph with Ctrl/Cmd + G). Off: Perlite's original graph.</div>
+                        </div>
+                        <div class="setting-item-control">
+                            <div class="checkbox-container quartzGraphOption is-enabled"><input type="checkbox"
+                                    tabindex="0"></div>
+                        </div>
+                    </div>
+                    <div class="setting-item mod-toggle">
+                        <div class="setting-item-info">
                             <div class="setting-item-name">Show Properties</div>
                             <div class="setting-item-description">Show the Front Matter properties at the top of
                                 notes (hidden by default).</div>

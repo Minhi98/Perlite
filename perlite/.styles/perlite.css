@@ -686,3 +686,79 @@ body:not(.perlite-show-tags) #tags_container {
 pre.perlite-dataview-query {
   display: none !important;
 }
+
+/* Quartz-style graph (.js/graph/perlite-graph.js), styles from Quartz's graph
+   component (MIT, jackyzha0) with Obsidian theme variables */
+body.perlite-quartz-graph-mode #localGraph {
+  height: auto;
+}
+body.perlite-quartz-graph-mode #mynetwork {
+  height: auto;
+}
+.graph-outer.perlite-quartz-graph {
+  border-radius: 5px;
+  border: 1px solid var(--background-modifier-border);
+  box-sizing: border-box;
+  height: 250px;
+  margin: 0.5em 0;
+  position: relative;
+  overflow: hidden;
+}
+.perlite-quartz-graph .graph-container,
+.perlite-quartz-graph .global-graph-container > canvas {
+  width: 100%;
+  height: 100%;
+}
+.graph-outer.perlite-quartz-graph > .global-graph-icon {
+  cursor: pointer;
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--text-normal);
+  opacity: 0.5;
+  width: 24px;
+  height: 24px;
+  position: absolute;
+  padding: 0.2rem;
+  margin: 0.3rem;
+  top: 0;
+  right: 0;
+  border-radius: 4px;
+  background-color: transparent;
+  transition: background-color 0.5s ease;
+}
+.graph-outer.perlite-quartz-graph > .global-graph-icon:hover {
+  background-color: var(--background-modifier-hover);
+}
+.global-graph-outer.perlite-quartz-graph {
+  position: fixed;
+  z-index: 9999;
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100%;
+  backdrop-filter: blur(4px);
+  display: none;
+  overflow: hidden;
+}
+.global-graph-outer.perlite-quartz-graph.active {
+  display: inline-block;
+}
+.global-graph-outer.perlite-quartz-graph > .global-graph-container {
+  border: 1px solid var(--background-modifier-border);
+  background-color: var(--background-primary);
+  border-radius: 5px;
+  box-sizing: border-box;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  height: 80vh;
+  width: 80vw;
+  overflow: hidden;
+}
+@media all and (max-width: 800px) {
+  .global-graph-outer.perlite-quartz-graph > .global-graph-container {
+    width: 90%;
+  }
+}
