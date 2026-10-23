@@ -24,6 +24,8 @@
 - **Block IDs:** `^block-id` markers are hidden from the page.
 - **cssclasses:** `cssclasses` / `cssclass` in frontmatter is passed to the frontend.
 - **Empty tags:** empty non-void elements are output as `<div></div>` instead of `<div />`. Before, a title-only callout swallowed the rest of the page.
+- **Link lookup:** a `[[link]]` or Markdown link to a note that doesn't exist relative to the linking note is looked up like Obsidian does: from the vault root, then by name anywhere in the vault (shortest path wins). A `.md` extension in the link is dropped. Links that already worked (relative `../` links, same-folder links) are unchanged. Before, `[[Note]]` or `[[Folder/Note.md]]` from another folder led to a blank page.
+- **HTML comments:** hidden like in Obsidian's reading view, also with `HTML_SAFE_MODE=true` (then they're dropped from the page instead of passed through).
 - **Markdown links to notes:** `[text](Folder/My%20Note.md)` and `[![[image.png|opts]]](Note.md#Heading)` are internal links, like in Obsidian. They open in the same tab, with hover previews, built the same way as a `[[wikilink]]`. URLs (`https:`, `mailto:` …), `#anchor` links and links to files such as `.pdf` or images are unchanged. Before, these were treated as external links to the raw `.md` file, which Perlite's nginx config blocks.
 - **Heading link text:** `[[Page#Heading]]` without an alias shows as "Page > Heading", like Obsidian. Links to a heading on the page being viewed (`[[#Heading]]` or `[[This Page#Heading]]`) show just the heading text and scroll within the page. Same-page links use upstream's `#Heading` URL format.
 - **Links in tables:** wikilinks use upstream's fix for the escaped alias pipe (`[[Note\|Alias]]`); the fork applies the same to image and note embeds in tables (`![[image.png\|options]]`), which upstream doesn't handle.
@@ -76,6 +78,12 @@
 - Not available: editing (adding, moving or deleting markers, drawing), command markers, GPX files, `linksTo`/`linksFrom` (they need Dataview's index) and the initiative tracker.
 - Leaflet 1.9.4, js-yaml and Font Awesome 5 (the plugin's icon set) are included and only loaded on pages with a map.
 - `perlite/Dockerfile` copies `leaflet.php` into the image (the upstream Dockerfile copies each PHP file by name).
+
+### Dataview (`perlite.js`, `helper.php`)
+- **Queries:** use the [Dataview Serializer](https://github.com/dsebastien/obsidian-dataview-serializer) plugin in Obsidian. It runs your queries (`LIST`, `TABLE`, `TASK`, inline `=` expressions and DataviewJS) with Dataview and writes the results into the note as Markdown between HTML comments, which Perlite shows like any other content. Serializer's links (shortest name, vault path with `.md`, or Markdown links) resolve to the right notes.
+- **Unconverted queries:** ```` ```dataview ```` and ```` ```dataviewjs ```` blocks are hidden, since Perlite can't run them. Convert them with Serializer's "Convert … Dataview queries" commands (DataviewJS by wrapping the code in `<!-- DataviewJSToSerialize: … -->`). Inline `` `=expression` `` queries stay as code until converted.
+- **Inline fields:** `[key:: value]` and `(key:: value)` are shown like Dataview's reading view (key and value, or the value only; dates in Dataview's date format), with Dataview's classes so themes style them. A full-line `key:: value` stays as written, like in Obsidian.
+- All of this only applies when Dataview is enabled in the vault (`.obsidian/community-plugins.json`); its settings (`prettyRenderInlineFields`, date formats) are read from `.obsidian/plugins/dataview/data.json`.
 
 # Perlite
   

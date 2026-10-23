@@ -807,6 +807,25 @@ function loadCustomCSS($rootDir)
 }
 
 
+// Dataview (enabled in the vault's community plugins): settings used to show
+// inline fields like its reading view; null when Dataview isn't enabled
+function dataviewSettings($rootDir)
+{
+	$enabled = json_decode((string) @file_get_contents($rootDir . '/.obsidian/community-plugins.json'), true);
+	if (!is_array($enabled) || !in_array('dataview', $enabled, true))
+		return null;
+
+	$data = json_decode((string) @file_get_contents($rootDir . '/.obsidian/plugins/dataview/data.json'), true);
+	$data = is_array($data) ? $data : array();
+
+	return array(
+		'prettyRenderInlineFields' => ($data['prettyRenderInlineFields'] ?? true) !== false,
+		'defaultDateFormat' => is_string($data['defaultDateFormat'] ?? null) ? $data['defaultDateFormat'] : 'MMMM dd, yyyy',
+		'defaultDateTimeFormat' => is_string($data['defaultDateTimeFormat'] ?? null) ? $data['defaultDateTimeFormat'] : 'h:mm a - MMMM dd, yyyy',
+	);
+}
+
+
 function loadSettings($rootDir)
 {
 
@@ -894,6 +913,7 @@ function loadSettings($rootDir)
 	$defaultSettings .= '<link id="showLocalGraph" data-option="' . ($showLocalGraph ? 'true' : 'false') . '">';
 	$defaultSettings .= '<link id="index" data-option="' . $index . '">';
 	$defaultSettings .= '<link id="uri_path" data-option="' . $uriPath . '">';
+	$defaultSettings .= '<link id="dataview_settings" data-option="' . htmlspecialchars(json_encode(dataviewSettings($rootDir)), ENT_QUOTES) . '">';
 
 
 	// Meta Tags

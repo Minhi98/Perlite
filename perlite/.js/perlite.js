@@ -350,6 +350,183 @@ $(document).on('mousedown', function (e) {
 
 
 /**
+ * Dataview (when enabled in the vault): inline fields are shown like Dataview's
+ * reading view - [key:: value] as key and value, (key:: value) as the value
+ * only, dates in Dataview's date format; a full-line "key:: value" stays as
+ * written, like in Obsidian. Unconverted ```dataview / ```dataviewjs blocks
+ * are hidden (Perlite can't run them; Dataview Serializer writes their results
+ * into the note instead).
+ * Matching follows Dataview's extractInlineFields() (MIT, blacksmithgu).
+ */
+var perliteDataviewSettings;
+
+function dataviewSettings() {
+  if (perliteDataviewSettings === undefined) {
+    var raw = $('#dataview_settings').attr('data-option');
+    try {
+      perliteDataviewSettings = raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      perliteDataviewSettings = null;
+    }
+  }
+  return perliteDataviewSettings;
+}
+
+function dataviewFindClosing(line, start, open, close) {
+  var nesting = 0;
+  var escaped = false;
+  for (var index = start; index < line.length; index++) {
+    var char = line.charAt(index);
+    if (char == "\\") {
+      escaped = !escaped;
+      continue;
+    }
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char == open) nesting++;
+    else if (char == close) nesting--;
+    if (nesting < 0) return { value: line.substring(start, index).trim(), endIndex: index + 1 };
+    escaped = false;
+  }
+  return undefined;
+}
+
+function dataviewExtractInlineFields(line) {
+  var wrappers = { "[": "]", "(": ")" };
+  var fields = [];
+  Object.keys(wrappers).forEach(function (open) {
+    var found = line.indexOf(open);
+    while (found >= 0) {
+      var field = null;
+      var sep = line.indexOf("::", found + 1);
+      if (sep >= 0) {
+        var key = line.substring(found + 1, sep).trim();
+        if (!/[\[\]\(\)]/.test(key)) {
+          var value = dataviewFindClosing(line, sep + 2, open, wrappers[open]);
+          if (value) {
+            field = { key: key, value: value.value, start: found, end: value.endIndex, wrapping: open };
+          }
+        }
+      }
+      if (!field) {
+        found = line.indexOf(open, found + 1);
+        continue;
+      }
+      fields.push(field);
+      found = line.indexOf(open, field.end);
+    }
+  });
+  fields.sort(function (a, b) { return a.start - b.start; });
+  var filtered = [];
+  fields.forEach(function (f) {
+    if (!filtered.length || filtered[filtered.length - 1].end < f.start) filtered.push(f);
+  });
+  return filtered;
+}
+
+// Dataview's canonicalizeVarName(): lower case, spaces -> "-", other symbols dropped
+function dataviewCanonicalKey(name) {
+  return String(name).replace(/<[^>]*>/g, '').toLocaleLowerCase()
+    .replace(/\s/g, '-').replace(/[^0-9\p{L}\p{Extended_Pictographic}_-]/gu, '');
+}
+
+// a subset of Luxon's toFormat() tokens (Dataview's date settings use them)
+function dataviewFormatDate(date, format) {
+  var months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  var days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  var pad = function (n, l) { return String(n).padStart(l || 2, '0'); };
+  var h12 = date.getHours() % 12 || 12;
+  var tokens = {
+    yyyy: pad(date.getFullYear(), 4), yy: pad(date.getFullYear() % 100), y: String(date.getFullYear()),
+    MMMM: months[date.getMonth()], MMM: months[date.getMonth()].slice(0, 3), MM: pad(date.getMonth() + 1), M: String(date.getMonth() + 1),
+    LLLL: months[date.getMonth()], LLL: months[date.getMonth()].slice(0, 3), LL: pad(date.getMonth() + 1), L: String(date.getMonth() + 1),
+    dd: pad(date.getDate()), d: String(date.getDate()),
+    EEEE: days[date.getDay()], EEE: days[date.getDay()].slice(0, 3),
+    HH: pad(date.getHours()), H: String(date.getHours()), hh: pad(h12), h: String(h12),
+    mm: pad(date.getMinutes()), m: String(date.getMinutes()), ss: pad(date.getSeconds()), s: String(date.getSeconds()),
+    a: date.getHours() < 12 ? 'AM' : 'PM'
+  };
+  return format.replace(/'([^']*)'|yyyy|yy|y|MMMM|MMM|MM|M|LLLL|LLL|LL|L|dd|d|EEEE|EEE|HH|H|hh|h|mm|m|ss|s|a/g, function (t, literal) {
+    return literal !== undefined ? literal : tokens[t];
+  });
+}
+
+// an inline field value as Dataview shows it: dates in its date format,
+// everything else as written
+function dataviewValueHtml(value, settings) {
+  var m = value.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/);
+  if (!m) {
+    return value;
+  }
+  var date;
+  if (m[7]) {
+    date = new Date(value);
+  } else {
+    date = new Date(+m[1], +m[2] - 1, m[3] ? +m[3] : 1, m[4] ? +m[4] : 0, m[5] ? +m[5] : 0, m[6] ? +m[6] : 0);
+  }
+  if (isNaN(date.getTime())) {
+    return value;
+  }
+  var timeless = date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0;
+  return $('<div>').text(dataviewFormatDate(date, timeless ? settings.defaultDateFormat : settings.defaultDateTimeFormat)).html();
+}
+
+function renderDataview(root) {
+  var settings = dataviewSettings();
+  if (!root || !settings) {
+    return;
+  }
+
+  root.querySelectorAll('pre > code.language-dataview, pre > code.language-dataviewjs').forEach(function (code) {
+    code.parentElement.classList.add('perlite-dataview-query');
+  });
+
+  if (!settings.prettyRenderInlineFields) {
+    return;
+  }
+
+  // innermost containers first, so each field is replaced once
+  var containers = Array.from(root.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, span, th, td')).reverse();
+  containers.forEach(function (el) {
+    if (el.closest('pre, code, .dataview.inline-field, .perlite-leaflet, .callout-icon')) {
+      return;
+    }
+    var html = el.innerHTML;
+    if (html.indexOf('::') === -1) {
+      return;
+    }
+    // inline code is left alone
+    var codes = [];
+    html = html.replace(/<code[\s>][\s\S]*?<\/code>/g, function (c) {
+      codes.push(c);
+      return '\u0000' + (codes.length - 1) + '\u0000';
+    });
+    var fields = dataviewExtractInlineFields(html);
+    if (!fields.length) {
+      return;
+    }
+    for (var i = fields.length - 1; i >= 0; i--) {
+      var f = fields[i];
+      var keyAttr = $('<div>').text(f.key.replace(/<[^>]*>/g, '')).html().replace(/"/g, '&quot;');
+      var normAttr = $('<div>').text(dataviewCanonicalKey(f.key)).html().replace(/"/g, '&quot;');
+      var value = dataviewValueHtml(f.value, settings);
+      var rendered;
+      if (f.wrapping == '[') {
+        rendered = '<span class="dataview inline-field"><span class="dataview inline-field-key" data-dv-key="' + keyAttr + '" data-dv-norm-key="' + normAttr + '">' + f.key + '</span>'
+          + '<span class="dataview inline-field-value">' + value + '</span></span>';
+      } else {
+        rendered = '<span class="dataview inline-field"><span class="dataview inline-field-standalone-value" data-dv-key="' + keyAttr + '" data-dv-norm-key="' + normAttr + '">' + value + '</span></span>';
+      }
+      html = html.slice(0, f.start) + rendered + html.slice(f.end);
+    }
+    el.innerHTML = html.replace(/\u0000(\d+)\u0000/g, function (t, n) { return codes[+n]; });
+  });
+}
+
+
+/**
  * get markdown content
  * @param {String} str
  * @param {Boolean} home
@@ -389,6 +566,7 @@ function getContent(str, home = false, popHover = false, anchor = "") {
 
           // set content
           $("#mdContent").html(result);
+          renderDataview($("#mdContent")[0]);
 
           // cssclasses from the note's front matter -> page container (like Obsidian)
           var previewView = $("#mdContent").closest(".markdown-preview-view");
@@ -650,6 +828,8 @@ function getContent(str, home = false, popHover = false, anchor = "") {
           // set content
           $("#mdHoverContent").html(result);
           $("#popUpContent").html(result);
+          renderDataview($("#mdHoverContent")[0]);
+          renderDataview($("#popUpContent")[0]);
 
           // set title
           var title = $("#mdHoverContent div.mdTitleHide").first().text() || "";

@@ -896,6 +896,54 @@ class PerliteParsedown extends Parsedown
         return $Block;
     }
 
+    # HTML comments are hidden like in Obsidian's reading view, also with
+    # HTML_SAFE_MODE (Dataview Serializer keeps its queries and result markers
+    # in comments). In safe mode the comment is dropped instead of passed
+    # through, so nothing written in it reaches the page.
+    protected function blockComment($Line)
+    {
+        if (!$this->safeMode) {
+            return parent::blockComment($Line);
+        }
+        if (!preg_match('/^<!--/', $Line['text'])) {
+            return;
+        }
+        // "<!-- note --> more text": a paragraph (the comment part is dropped inline)
+        if (strpos($Line['text'], '-->') !== false && !preg_match('/-->$/', $Line['text'])) {
+            return;
+        }
+        $Block = array('markup' => '');
+        if (preg_match('/-->$/', $Line['text'])) {
+            $Block['closed'] = true;
+        }
+        return $Block;
+    }
+
+    protected function blockCommentContinue($Line, array $Block)
+    {
+        if (!$this->safeMode) {
+            return parent::blockCommentContinue($Line, $Block);
+        }
+        if (isset($Block['closed'])) {
+            return;
+        }
+        if (preg_match('/-->$/', $Line['text'])) {
+            $Block['closed'] = true;
+        }
+        return $Block;
+    }
+
+    protected function inlineMarkup($Excerpt)
+    {
+        if ($this->safeMode && preg_match('/^<!---?[^>-](?:-?[^-])*-->/s', $Excerpt['text'], $matches)) {
+            return array(
+                'markup' => '',
+                'extent' => strlen($matches[0]),
+            );
+        }
+        return parent::inlineMarkup($Excerpt);
+    }
+
     # Obsidian Leaflet maps (```leaflet): a container perlite.js renders the map
     # into, with the block's source and the note it belongs to (for its links)
     protected function blockFencedCodeComplete($Block)
@@ -1677,6 +1725,24 @@ class PerliteParsedown extends Parsedown
             $path = implode('/', $segments);
         }
 
+        // a note that doesn't exist relative to this one is looked up like
+        // Obsidian does: from the vault root, then by name anywhere in the vault
+        // (Dataview Serializer writes "Folder/Note.md" and shortest-path names);
+        // a ".md" extension is dropped
+        if ($openNewTab == false && !str_starts_with($raw, '#')) {
+            $pieces = explode('#', $linkFile, 2);
+            $page = preg_replace('/\.md$/i', '', $pieces[0]);
+            $anchorPart = isset($pieces[1]) ? '#' . $pieces[1] : '';
+            if ($page !== '') {
+                $resolvedNote = $this->resolveLinkTarget($path, $page);
+                if ($resolvedNote !== null) {
+                    $path = '';
+                    $linkFile = ltrim($resolvedNote, '/') . $anchorPart;
+                } else {
+                    $linkFile = $page . $anchorPart;
+                }
+            }
+        }
 
         $urlPath = ltrim($path . '/' . $linkFile, '/');
 
@@ -2226,6 +2292,21 @@ class PerliteParsedown extends Parsedown
             $out[] = $seg;
         }
         return '/' . implode('/', $out);
+    }
+
+    # the note a link points to: the path relative to the linking note's
+    # folder if it exists, otherwise resolveNote() (vault root, then by name)
+    protected function resolveLinkTarget(string $folder, string $page)
+    {
+        global $avFiles;
+        if (!is_array($avFiles) || !$avFiles) {
+            return null;
+        }
+        $relative = self::normalizeVaultPath('/' . $folder . '/' . $page);
+        if (in_array($relative, $avFiles, true)) {
+            return $relative;
+        }
+        return $this->resolveNote($page);
     }
 
     # resolve like Obsidian: relative to the current note, from the vault

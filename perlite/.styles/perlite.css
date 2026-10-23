@@ -658,3 +658,31 @@ body:not(.perlite-show-properties) .mod-header:not(.mod-ui):has(> .metadata-cont
 body:not(.perlite-show-tags) #tags_container {
   display: none !important;
 }
+/* Dataview inline fields, as in Dataview's reading view (styles from the
+   Dataview plugin, MIT, blacksmithgu); themes that style them apply too */
+.dataview.inline-field-key {
+  padding-left: 8px;
+  padding-right: 8px;
+  font-family: var(--font-monospace);
+  background-color: var(--background-primary-alt);
+  color: var(--nav-item-color-selected);
+}
+.dataview.inline-field-value {
+  padding-left: 8px;
+  padding-right: 8px;
+  font-family: var(--font-monospace);
+  background-color: var(--background-secondary-alt);
+  color: var(--nav-item-color-selected);
+}
+.dataview.inline-field-standalone-value {
+  padding-left: 8px;
+  padding-right: 8px;
+  font-family: var(--font-monospace);
+  background-color: var(--background-secondary-alt);
+  color: var(--nav-item-color-selected);
+}
+/* unconverted ```dataview / ```dataviewjs queries (Dataview Serializer writes
+   the results into the note instead) */
+pre.perlite-dataview-query {
+  display: none !important;
+}
