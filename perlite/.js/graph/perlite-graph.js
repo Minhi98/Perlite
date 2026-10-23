@@ -5,6 +5,10 @@
  * D3 force simulation, PixiJS (WebGL) rendering, local graph (depth 1) and a
  * global graph (all notes, radial layout, focus on hover), tags as nodes,
  * visited pages, labels that fade in with zoom, drag / zoom, Ctrl/Cmd + G.
+ * Perlite changes: hovering uses its own hit test (whole circle, at least
+ * HIT_MIN px, and visible labels), labels keep their on-screen size while
+ * zooming, have an outline, and are hidden where they would overlap a more
+ * important one; hovering a node shows its neighbours' labels.
  * Data comes from Perlite's graph (#allGraphNodes / #allGraphEdges, built from
  * the Metadata Extractor plugin's metadata.json); colours from the theme's
  * Obsidian graph colours.
@@ -27,6 +31,10 @@
   };
 
   var VISITED_KEY = 'perlite-graph-visited';
+
+  var HIT_MIN = 9;     // px: smallest hover / click radius of a node on screen
+  var LABEL_GAP = 3;   // px between a node and its label
+  var LABEL_PAD = 2;   // px kept free around each label
 
   function getVisited() {
     try {
@@ -116,6 +124,7 @@
       node: probeColor('graph-view color-fill', '#6c6c6c'),              // Quartz --gray
       line: probeColor('graph-view color-line', '#d4d4d4'),              // Quartz --lightgray
       text: probeColor('graph-view color-text', '#1a1a1a'),              // Quartz --dark
+      background: body.getPropertyValue('--graph-background').trim() || body.getPropertyValue('--background-secondary').trim() || body.getPropertyValue('--background-primary').trim() || '#f5f5f5',
       tagFill: body.getPropertyValue('--background-primary').trim() || '#f5f5f5', // Quartz --light
       font: body.getPropertyValue('--font-interface').trim() || body.fontFamily || 'inherit'
     };
@@ -200,7 +209,9 @@
     var app = new PIXI.Application();
     await app.init({
       width: width, height: height, antialias: true, backgroundAlpha: 0,
-      resolution: window.devicePixelRatio || 1, autoDensity: true, eventMode: 'static'
+      resolution: window.devicePixelRatio || 1, autoDensity: true,
+      // pointer handling is done below (hit test on the canvas), not by Pixi
+      eventMode: 'none', eventFeatures: { move: false, globalMove: false, click: false, wheel: false }
     });
     container.appendChild(app.canvas);
 
@@ -278,19 +289,6 @@
       });
     }
 
-    function renderLabels() {
-      var defaultScale = 1 / cfg.scale;
-      var activeScale = defaultScale * 1.1;
-      nodeRenderData.forEach(function (n) {
-        if (hoveredNodeId === n.simulationData.id) {
-          n.label.alpha = 1;
-          n.label.scale.set(activeScale);
-        } else {
-          n.label.scale.set(defaultScale);
-        }
-      });
-    }
-
     function renderNodes() {
       nodeRenderData.forEach(function (n) {
         n.gfx.alpha = hoveredNodeId !== null && cfg.focusOnHover ? (n.active ? 1 : 0.2) : 1;
@@ -300,43 +298,36 @@
     function renderPixiFromD3() {
       renderNodes();
       renderLinks();
-      renderLabels();
     }
 
     nodes.forEach(function (n) {
       var isTag = n.id.startsWith('tags/');
+      // labels are drawn at their on-screen size and scaled against the zoom,
+      // with an outline in the background colour so crossing lines don't hide them
       var label = new PIXI.Text({
         text: n.text,
-        style: { fontSize: cfg.fontSize * 15, fill: colors.text, fontFamily: colors.font },
-        resolution: (window.devicePixelRatio || 1) * 4
+        style: {
+          fontSize: cfg.fontSize * 20, fill: colors.text, fontFamily: colors.font,
+          stroke: { color: colors.background, width: 3, join: 'round' }
+        },
+        resolution: (window.devicePixelRatio || 1) * 2
       });
-      label.anchor.set(0.5, 1.2);
+      label.anchor.set(0.5, 1);
       label.alpha = 0;
-      label.scale.set(1 / cfg.scale);
       labelContainer.addChild(label);
 
       var gfx = new PIXI.Graphics();
       gfx.circle(0, 0, nodeRadius(n));
       gfx.fill({ color: isTag ? colors.tagFill : nodeColor(n) });
       if (isTag) gfx.stroke({ width: 2, color: colors.tagStroke });
-      gfx.eventMode = 'static';
-      gfx.cursor = 'pointer';
+      gfx.eventMode = 'none';
       gfx.label = n.id;
 
-      var savedAlpha = 0;
-      gfx.on('pointerover', function () {
-        updateHoverInfo(n.id);
-        savedAlpha = label.alpha;
-        if (!dragging) renderPixiFromD3();
-      });
-      gfx.on('pointerleave', function () {
-        updateHoverInfo(null);
-        label.alpha = savedAlpha;
-        if (!dragging) renderPixiFromD3();
-      });
-
       nodeContainer.addChild(gfx);
-      nodeRenderData.push({ simulationData: n, gfx: gfx, label: label, color: nodeColor(n), alpha: 1, active: false });
+      nodeRenderData.push({
+        simulationData: n, gfx: gfx, label: label, color: nodeColor(n), alpha: 1, active: false,
+        labelW: label.width + LABEL_PAD * 2, labelH: label.height + LABEL_PAD * 2, box: null
+      });
     });
 
     simLinks.forEach(function (l) {
@@ -350,18 +341,59 @@
       if (callbacks && callbacks.open) callbacks.open(slug, evt);
     }
 
-    if (cfg.drag) {
-      var findNode = function (evt) {
-        var x = (evt.x - currentTransform.x) / currentTransform.k;
-        var y = (evt.y - currentTransform.y) / currentTransform.k;
-        for (var i = 0; i < nodes.length; i++) {
-          var n = nodes[i];
-          var dx = x - n.x - width / 2, dy = y - n.y - height / 2;
-          if (Math.sqrt(dx * dx + dy * dy) < nodeRadius(n) + 5) return n;
-        }
-        return null;
+    function screenPos(n) {
+      return {
+        x: (n.x + width / 2) * currentTransform.k + currentTransform.x,
+        y: (n.y + height / 2) * currentTransform.k + currentTransform.y
       };
-      var drag = d3.drag().container(app.canvas).subject(findNode)
+    }
+
+    // the node under a point of the canvas (CSS px): the nearest node whose
+    // circle (at least HIT_MIN px) contains it, else a node whose visible label does
+    function nodeAt(px, py) {
+      var best = null, bestDist = Infinity;
+      nodes.forEach(function (n) {
+        if (n.x == null) return;
+        var p = screenPos(n);
+        var dist = Math.hypot(px - p.x, py - p.y);
+        if (dist <= Math.max(nodeRadius(n) * currentTransform.k, HIT_MIN) && dist < bestDist) {
+          best = n;
+          bestDist = dist;
+        }
+      });
+      if (best) return best;
+      for (var i = nodeRenderData.length - 1; i >= 0; i--) {
+        var b = nodeRenderData[i].box;
+        if (b && nodeRenderData[i].label.alpha > 0.5 && px >= b[0] && px <= b[2] && py >= b[1] && py <= b[3]) {
+          return nodeRenderData[i].simulationData;
+        }
+      }
+      return null;
+    }
+
+    function setHover(id) {
+      if (id === hoveredNodeId) return;
+      updateHoverInfo(id);
+      renderPixiFromD3();
+    }
+
+    d3.select(app.canvas)
+      .on('pointermove.hover', function (evt) {
+        if (dragging) return;
+        var p = d3.pointer(evt, app.canvas);
+        var n = nodeAt(p[0], p[1]);
+        setHover(n ? n.id : null);
+        app.canvas.style.cursor = n ? 'pointer' : '';
+      })
+      .on('pointerleave.hover', function () {
+        if (dragging) return;
+        setHover(null);
+        app.canvas.style.cursor = '';
+      });
+
+    if (cfg.drag) {
+      var drag = d3.drag().container(app.canvas)
+        .subject(function (evt) { return nodeAt(evt.x, evt.y); })
         .on('start', function (evt) {
           if (!evt.active) simulation.alphaTarget(1).restart();
           evt.subject.fx = evt.subject.x;
@@ -371,7 +403,7 @@
           evt.subject.__dragOffset = { x: x - evt.subject.x, y: y - evt.subject.y };
           dragStartTime = Date.now();
           dragging = true;
-          hoveredNodeId = evt.subject.id;
+          setHover(evt.subject.id);
         })
         .on('drag', function (evt) {
           var x = (evt.x - currentTransform.x) / currentTransform.k - width / 2;
@@ -384,33 +416,121 @@
           evt.subject.fx = null;
           evt.subject.fy = null;
           dragging = false;
-          updateHoverInfo(null);
-          renderPixiFromD3();
+          var p = evt.sourceEvent ? d3.pointer(evt.sourceEvent, app.canvas) : [-1, -1];
+          var under = nodeAt(p[0], p[1]);
+          setHover(under ? under.id : null);
           // a short press is a click: open the page
           if (Date.now() - dragStartTime < 500) open(evt.subject.id, evt.sourceEvent);
         });
       d3.select(app.canvas).call(drag);
     } else {
-      nodeRenderData.forEach(function (n) {
-        n.gfx.on('click', function (e) { open(n.simulationData.id, e); });
+      d3.select(app.canvas).on('click.open', function (evt) {
+        var p = d3.pointer(evt, app.canvas);
+        var n = nodeAt(p[0], p[1]);
+        if (n) open(n.id, evt);
       });
     }
 
     if (cfg.zoom) {
-      var zoom = d3.zoom().extent([[0, 0], [width, height]]).scaleExtent([0.25, 4])
+      var zoom = d3.zoom().extent([[0, 0], [width, height]]).scaleExtent([0.25, 8])
         .on('zoom', function (evt) {
           currentTransform = evt.transform;
           stage.scale.set(currentTransform.k, currentTransform.k);
           stage.position.set(currentTransform.x, currentTransform.y);
-          // labels fade in as you zoom in
-          var scale = currentTransform.k * cfg.opacityScale;
-          var scaledOpacity = Math.max((scale - 1) / 3.75, 0);
-          var activeLabels = nodeRenderData.filter(function (n) { return n.active; }).map(function (n) { return n.label; });
-          labelContainer.children.forEach(function (label) {
-            if (activeLabels.indexOf(label) === -1) label.alpha = scaledOpacity;
-          });
         });
       d3.select(app.canvas).call(zoom);
+    }
+
+    var degreeOf = function (n) { return degree.get(n.simulationData.id) || 0; };
+
+    // which labels show: they fade in as you zoom in (all of them on hover:
+    // the hovered node and its neighbours), and a label that would overlap a
+    // more important one (hovered, neighbour, current page, more links) is hidden
+    function updateLabels() {
+      var k = currentTransform.k;
+      var zoomAlpha = Math.min(1, Math.max(0, (k * cfg.opacityScale - 1) / 1.5));
+      var hovering = hoveredNodeId !== null;
+      var order = nodeRenderData.slice().sort(function (a, b) {
+        return rank(b) - rank(a);
+      });
+      function rank(n) {
+        var id = n.simulationData.id;
+        if (id === hoveredNodeId) return 4e6;
+        if (hovering && hoveredNeighbours.has(id)) return 3e6 + degreeOf(n);
+        if (id === currentSlug) return 2e6;
+        return degreeOf(n);
+      }
+      var grid = new Map();
+      var CELL = 64;
+      function cells(b, fn) {
+        for (var cx = Math.floor(b[0] / CELL); cx <= Math.floor(b[2] / CELL); cx++) {
+          for (var cy = Math.floor(b[1] / CELL); cy <= Math.floor(b[3] / CELL); cy++) {
+            if (fn(cx + ',' + cy) === false) return false;
+          }
+        }
+        return true;
+      }
+      order.forEach(function (n) {
+        var d = n.simulationData;
+        var id = d.id;
+        var want = hovering ? (hoveredNeighbours.has(id) ? 1 : 0) : zoomAlpha;
+        n.box = null;
+        if (want > 0 && d.x != null) {
+          // above the node, else below, right or left of it, whichever is free
+          var p = screenPos(d);
+          var off = nodeRadius(d) * k + LABEL_GAP;
+          var w = n.labelW, h = n.labelH, P = LABEL_PAD;
+          var spots = [
+            { side: 'above', b: [p.x - w / 2, p.y - off - h + P, p.x + w / 2, p.y - off + P] },
+            { side: 'below', b: [p.x - w / 2, p.y + off - P, p.x + w / 2, p.y + off + h - P] },
+            { side: 'right', b: [p.x + off - P, p.y - h / 2, p.x + off + w - P, p.y + h / 2] },
+            { side: 'left', b: [p.x - off - w + P, p.y - h / 2, p.x - off + P, p.y + h / 2] }
+          ];
+          // the hovered node and its neighbours always get a label
+          var must = id === hoveredNodeId || (hovering && hoveredNeighbours.has(id));
+          var spot = null;
+          for (var si = 0; si < spots.length && !spot; si++) {
+            var b = spots[si].b;
+            var free = (id === hoveredNodeId && si === 0) || cells(b, function (key) {
+              var placed = grid.get(key);
+              if (!placed) return true;
+              for (var i = 0; i < placed.length; i++) {
+                var o = placed[i];
+                if (b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]) return false;
+              }
+              return true;
+            });
+            if (free) spot = spots[si];
+          }
+          if (!spot && must) spot = spots[0];
+          if (spot) {
+            n.box = spot.b;
+            if (n.side !== spot.side) {
+              n.side = spot.side;
+              n.label.anchor.set(spot.side === 'right' ? 0 : spot.side === 'left' ? 1 : 0.5,
+                spot.side === 'below' ? 0 : spot.side === 'above' ? 1 : 0.5);
+            }
+            cells(spot.b, function (key) {
+              if (!grid.has(key)) grid.set(key, []);
+              grid.get(key).push(spot.b);
+            });
+          } else {
+            want = 0;
+          }
+        }
+        // ease towards the target so labels don't flicker while the layout settles
+        n.label.alpha += (want - n.label.alpha) * 0.3;
+        if (Math.abs(want - n.label.alpha) < 0.02) n.label.alpha = want;
+        var s = (id === hoveredNodeId ? 1.1 : 1) / k;
+        n.label.scale.set(s, s);
+        if (d.x != null) {
+          var gap = nodeRadius(d) + LABEL_GAP / k;
+          var side = n.side || 'above';
+          n.label.position.set(
+            d.x + width / 2 + (side === 'right' ? gap : side === 'left' ? -gap : 0),
+            d.y + height / 2 + (side === 'below' ? gap : side === 'above' ? -gap : 0));
+        }
+      });
     }
 
     var stopped = false;
@@ -420,8 +540,8 @@
         var x = n.simulationData.x, y = n.simulationData.y;
         if (x == null || y == null) return;
         n.gfx.position.set(x + width / 2, y + height / 2);
-        if (n.label) n.label.position.set(x + width / 2, y + height / 2);
       });
+      updateLabels();
       linkRenderData.forEach(function (l) {
         var d = l.simulationData;
         if (d.source.x == null || d.target.x == null) return;
@@ -441,8 +561,10 @@
         });
       },
       labels: function () {
-        return nodeRenderData.map(function (n) { return { id: n.simulationData.id, alpha: n.label.alpha }; });
-      }
+        return nodeRenderData.map(function (n) { return { id: n.simulationData.id, alpha: n.label.alpha, box: n.box }; });
+      },
+      hovered: function () { return hoveredNodeId; },
+      zoom: function () { return currentTransform.k; }
     };
 
     simulation.on('tick', function () { });
