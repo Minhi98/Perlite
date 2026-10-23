@@ -3318,17 +3318,8 @@ $(document).ready(function () {
     }
   });
 
-  // Quartz graph: redraw with the new colours when light / dark mode changes
-  var graphThemeClass = $('body').hasClass('theme-dark');
-  new MutationObserver(function () {
-    var dark = $('body').hasClass('theme-dark');
-    if (dark !== graphThemeClass) {
-      graphThemeClass = dark;
-      if (useQuartzGraph() && window.PerliteQuartzGraph) {
-        window.PerliteQuartzGraph.rerender(document.getElementById('mynetwork'));
-      }
-    }
-  }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  // (the Quartz graph redraws itself when the theme or light / dark mode
+  // changes, see perlite-graph.js)
 
   $('.clickable-icon.view-action[aria-label="Open Tags"]').click(function (e) {
 

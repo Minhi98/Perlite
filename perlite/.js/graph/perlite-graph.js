@@ -10,7 +10,8 @@
  *   (.graph-view.color-*): node / tag / line / text colours, the hovered node
  *   and its links in the highlight colour with everything else faded, labels
  *   under the nodes in the default sans-serif, thin lines, bigger nodes for
- *   notes with more links, starts zoomed to fit (Quartz's current-page and
+ *   notes with more links, notes without links kept near the rest (centre
+ *   pull, limited repulsion), starts zoomed to fit (Quartz's current-page and
  *   visited colours and its radial global layout dropped)
  * - hovering uses its own hit test (whole circle, at least HIT_MIN px; labels
  *   don't count); tags only with the "Show Tags" setting
@@ -18,6 +19,7 @@
  *   would overlap a more important one; hovering shows the neighbours' labels
  * - no jump on page changes: the layout is computed before the first frame,
  *   starting from where the notes were in the previous graph
+ * - redrawn when the theme, light / dark mode or CSS snippets change
  * Data comes from Perlite's graph (#allGraphNodes / #allGraphEdges: Perlite's
  * own index, or the Metadata Extractor plugin's metadata.json).
  */
@@ -30,12 +32,12 @@
   var LOCAL_CONFIG = {
     drag: true, zoom: true, depth: 1, scale: 1.1, repelForce: 0.5, centerForce: 0.3,
     linkDistance: 60, fontSize: 0.6, opacityScale: 1, showTags: true, removeTags: [],
-    focusOnHover: true, enableRadial: false, memory: 'local'
+    focusOnHover: true, enableRadial: false, memory: 'local', gravity: 0.05, repelRange: 300
   };
   var GLOBAL_CONFIG = {
     drag: true, zoom: true, depth: -1, scale: 0.9, repelForce: 0.5, centerForce: 0.2,
     linkDistance: 30, fontSize: 0.6, opacityScale: 1, showTags: true, removeTags: [],
-    focusOnHover: true, enableRadial: false, memory: 'global'
+    focusOnHover: true, enableRadial: false, memory: 'global', gravity: 0.08, repelRange: 250
   };
 
   var HIT_MIN = 9;     // px: smallest hover / click radius of a node on screen
@@ -246,8 +248,13 @@
     }
 
     var simulation = d3.forceSimulation(nodes)
-      .force('charge', d3.forceManyBody().strength(-100 * cfg.repelForce))
+      .force('charge', d3.forceManyBody().strength(-100 * cfg.repelForce).distanceMax(cfg.repelRange))
       .force('center', d3.forceCenter().strength(cfg.centerForce))
+      // every node is pulled towards the middle (like Obsidian's centre force),
+      // and repulsion only reaches so far, so notes without links stay near
+      // the rest instead of drifting off (Quartz only re-centres the whole graph)
+      .force('x', d3.forceX(0).strength(cfg.gravity))
+      .force('y', d3.forceY(0).strength(cfg.gravity))
       .force('link', d3.forceLink(simLinks).distance(cfg.linkDistance))
       .force('collide', d3.forceCollide().radius(nodeRadius).iterations(3));
     if (cfg.enableRadial) {
@@ -681,8 +688,11 @@
     return outer.querySelector('.graph-container');
   }
 
+  var lastLocalHost = null;
+
   function renderLocal(host, slug) {
     currentSlug = slug;
+    lastLocalHost = host;
     if (!host || !host.offsetParent) return; // hidden: rendered when shown
     var token = ++localToken;
     if (localCleanup) { localCleanup(); localCleanup = null; }
@@ -738,6 +748,69 @@
       closeGlobal();
     }
   });
+
+  /* ---------- follow theme changes ---------- */
+
+  // the graph's colours are read when it's drawn, so redraw it when they
+  // change: switching theme or light / dark mode, CSS snippets, accent colour.
+  // A newly enabled stylesheet may still be loading, so check a few times.
+  var themeKey = null;
+  var themeTimer = null;
+
+  function checkTheme() {
+    var key = JSON.stringify(themeColors());
+    if (themeKey !== null && key !== themeKey) {
+      themeKey = key;
+      cachedColorsChanged();
+    } else {
+      themeKey = key;
+    }
+  }
+
+  function cachedColorsChanged() {
+    if (lastLocalHost && lastLocalHost.isConnected && lastLocalHost.querySelector('.graph-container')) {
+      renderLocal(lastLocalHost, currentSlug);
+    }
+    if (isGlobalOpen()) openGlobal();
+  }
+
+  function watchTheme() {
+    var tries = 0;
+    clearInterval(themeTimer);
+    checkTheme();
+    themeTimer = setInterval(function () {
+      checkTheme();
+      if (++tries >= 20) clearInterval(themeTimer);
+    }, 100);
+  }
+
+  function isStyleNode(node) {
+    return node && (node.nodeName === 'LINK' || node.nodeName === 'STYLE');
+  }
+
+  if (window.MutationObserver) {
+    // stylesheets enabled, disabled, added or removed anywhere in the page
+    new MutationObserver(function (mutations) {
+      for (var i = 0; i < mutations.length; i++) {
+        var m = mutations[i];
+        if (isStyleNode(m.target) ||
+          Array.prototype.some.call(m.addedNodes, isStyleNode) ||
+          Array.prototype.some.call(m.removedNodes, isStyleNode)) {
+          watchTheme();
+          return;
+        }
+      }
+    }).observe(document.documentElement, {
+      subtree: true, childList: true, attributes: true, attributeFilter: ['disabled', 'href', 'media']
+    });
+    // light / dark mode and settings stored as classes or inline styles
+    new MutationObserver(watchTheme).observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+    new MutationObserver(watchTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
+  }
+  // a stylesheet that finished loading
+  document.addEventListener('load', function (e) {
+    if (isStyleNode(e.target)) watchTheme();
+  }, true);
 
   window.PerliteQuartzGraph = {
     setCallbacks: function (cb) { callbacks = cb || {}; },
