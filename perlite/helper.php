@@ -1,7 +1,7 @@
 <?php
 
 /*!
- * Perlite v1.6.3 (https://github.com/secure-77/Perlite)
+ * Perlite v1.6.4 (https://github.com/secure-77/Perlite)
  * Author: sec77 (https://secure77.de)
  * Licensed under MIT (https://github.com/secure-77/Perlite/blob/main/LICENSE)
  */
@@ -134,7 +134,15 @@ $siteDescription = getSetting('SITE_DESC', 'A web based markdown viewer optimize
 $siteName = getSetting('SITE_NAME', 'Perlite Demo');
 
 // --- Profile Settings ---
+// SITE_LOGO: path relative to the perlite folder (e.g. logo.svg or Notes/logo.png for a logo in the vault with docker)
+// without any configuration (no .env file and no environment variable) the default logo.svg is used,
+// if configured but empty, the profile section is hidden
 $siteLogo = getSetting('SITE_LOGO');
+if ($siteLogo === '' && getenv('SITE_LOGO') === false && $envFileDir === '')
+	$siteLogo = 'logo.svg';
+$siteLogo = ltrim(str_replace('\\', '/', $siteLogo), '/');
+if (!in_array(strtolower(pathinfo($siteLogo, PATHINFO_EXTENSION)), ['svg', 'png', 'jpg', 'jpeg'], true))
+	$siteLogo = '';
 $siteHomepage = getSetting('SITE_HOMEPAGE', $siteURL);
 $siteGithub = getSetting('SITE_GITHUB');
 $siteTwitter = getSetting('SITE_TWITTER');
@@ -145,7 +153,7 @@ if (!isset($customSection))
 if ($siteLogo and empty($customSection)) {
 	$customSection = '<div class="sm-site-title">&nbsp;</div>
                                     <div class="custom-page">
-					                  <img class="custom-page-logo" src="' . $uriPath . $siteLogo . '" alt="Custom Logo">
+					                  <img class="custom-page-logo" src="' . $uriPath . implode('/', array_map('rawurlencode', explode('/', $siteLogo))) . '" alt="Custom Logo">
 					                  <div> &nbsp;</div>';
 
 	$customSection = $customSection . '
@@ -783,6 +791,19 @@ function checkArray($requestNode)
 	}
 
 	return false;
+}
+
+
+// load custom.css from the vault root, it is included after all system styles and themes to override them
+function loadCustomCSS($rootDir)
+{
+	global $uriPath;
+
+	$file = $rootDir . '/custom.css';
+	if (!is_file($file))
+		return '';
+
+	return '<link id="custom-css" rel="stylesheet" href="' . $uriPath . $rootDir . '/custom.css?v=' . filemtime($file) . '" type="text/css">';
 }
 
 

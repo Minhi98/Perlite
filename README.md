@@ -14,10 +14,7 @@
   - `|300` and `|300x200` set the size.
   - Fragment options work (`![[img.png#cap#wtiny|Caption]]`).
   - External images accept a size (`![alt|300](url)`) and an empty URL (`![alt|opts]()`).
-- **Task lists:**
-  - Rendered as Obsidian's `<ul class="contains-task-list"><li class="task-list-item" data-task="…">`.
-  - Any checkbox character works (alternate checkboxes: `[?]`, `[!]`, `[-]`, `[/]` …).
-  - A task item no longer wipes out the rest of its list (this broke kanban and checks callouts).
+- **Task lists:** uses upstream's task lists (since v1.6.4), rendered like Obsidian's reading view (`contains-task-list`, `task-list-item`, `data-task`), with nested tasks and alternate checkboxes (`[?]`, `[!]`, `[-]`, `[/]` …). The fork's own version was removed.
 - **Footnotes:** uses upstream's footnote support (since v1.6.3, incl. inline `^[...]` footnotes); the fork adds hover previews (see Frontend) and hides `^block-id` markers.
 - **Note embeds:**
   - `![[Note]]`, `![[Note#Heading]]` and `![[Note#^block]]` are embedded in Obsidian's embed structure, so ITS Embed Adjustments work (`clean`, `no-title`, `nlk` …).

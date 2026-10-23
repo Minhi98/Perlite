@@ -1,7 +1,7 @@
 <?php
 
 /*!
- * Perlite v1.6.3 (https://github.com/secure-77/Perlite)
+ * Perlite v1.6.4 (https://github.com/secure-77/Perlite)
  * Author: sec77 (https://secure77.de)
  * Licensed under MIT (https://github.com/secure-77/Perlite/blob/main/LICENSE)
  */
@@ -1044,8 +1044,6 @@ class PerliteParsedown extends Parsedown
     {
         list($name, $pattern) = $Line['text'][0] <= '-' ? array('ul', '[*+-]') : array('ol', '[0-9]+[.]');
 
-
-
         if (preg_match('/^(' . $pattern . '[ ]+)(.*)/', $Line['text'], $matches)) {
             $Block = array(
                 'indent' => $Line['indent'],
@@ -1080,42 +1078,70 @@ class PerliteParsedown extends Parsedown
         }
     }
 
-    # Task lists, rendered like Obsidian's reading view so themes/snippets work:
-    #   <ul class="contains-task-list">
-    #     <li class="task-list-item is-checked" data-task="?">
-    #       <input type="checkbox" class="task-list-item-checkbox" data-task="?" checked>text
-    # Any character in [ ] is supported (alternate checkboxes: [?] [!] [-] [/] ...).
+    # obsidian task items ("- [ ] todo", "- [x] done"), rendered like the reading view
+    protected function taskMarker($text)
+    {
+        if (preg_match('/^\[([^\]])\](?:[ ]+|$)/u', $text, $matches)) {
+            return $matches;
+        }
+
+        return null;
+    }
+
     protected function markTaskItem(array &$Block)
     {
-        $first = $Block['li']['text'][0] ?? '';
-        if (!preg_match('/^\[(.)\](?:[ \t]|$)/u', $first, $m)) {
+        $marker = $this->taskMarker($Block['li']['text'][0]);
+
+        if ($marker === null) {
             return;
         }
-        $task = $m[1] === ' ' ? '' : $m[1];
+
+        $isChecked = $marker[1] !== ' ';
+
         $Block['li']['attributes'] = array(
-            'class' => 'task-list-item' . ($task !== '' ? ' is-checked' : ''),
-            'data-task' => $task,
+            'class' => $isChecked ? 'task-list-item is-checked' : 'task-list-item',
+            'data-task' => $isChecked ? $marker[1] : '',
         );
+
         $Block['element']['attributes']['class'] = 'contains-task-list';
     }
 
     protected function li($lines)
     {
-        $checkbox = '';
-        if (isset($lines[0]) && preg_match('/^\[(.)\](?:[ \t]+|$)/u', $lines[0], $m)) {
-            $task = $m[1] === ' ' ? '' : $m[1];
-            $checkbox = '<input type="checkbox" class="task-list-item-checkbox" data-task="'
-                . self::escape($task) . '"' . ($task !== '' ? ' checked' : '') . '>';
-            $lines[0] = substr($lines[0], strlen($m[0]));
+        $marker = isset($lines[0]) ? $this->taskMarker($lines[0]) : null;
+
+        if ($marker === null) {
+            return parent::li($lines);
         }
 
-        return $checkbox . parent::li($lines);
+        $isChecked = $marker[1] !== ' ';
+
+        $lines[0] = (string) substr($lines[0], strlen($marker[0]));
+
+        $checkbox = $this->element(array(
+            'name' => 'input',
+            'attributes' => array(
+                'type' => 'checkbox',
+                'class' => 'task-list-item-checkbox',
+                'data-task' => $isChecked ? $marker[1] : '',
+                'checked' => $isChecked ? '' : null,
+            ),
+        ));
+
+        $markup = parent::li($lines);
+
+        # loose lists wrap the item in <p>, keep the checkbox inline with the text
+        $trimmed = ltrim($markup);
+
+        if (strncmp($trimmed, '<p>', 3) === 0) {
+            return '<p>' . $checkbox . substr($trimmed, 3);
+        }
+
+        return $checkbox . $markup;
     }
 
     protected function blockListContinue($Line, array $Block)
     {
-
-
         $Block['indent'] = isset($Block['indent']) ? $Block['indent'] : '0';
 
         if ($Block['indent'] === $Line['indent'] and preg_match('/^' . $Block['pattern'] . '(?:[ ]+(.*)|$)/', $Line['text'], $matches)) {
@@ -1152,7 +1178,7 @@ class PerliteParsedown extends Parsedown
         }
 
         if (!isset($Block['interrupted'])) {
-            if (preg_match('/^[`~]{3,}/', $Line['text'])) {
+            if ($Line['indent'] <= $Block['indent'] && preg_match('/^[`~]{3,}/', $Line['text'])) {
                 return null;
             }
             $text = preg_replace('/^[ ]{0,4}/', '', $Line['body']);
@@ -1701,7 +1727,15 @@ class PerliteParsedown extends Parsedown
         }
 
         $label = $m[1];
-        $path = $m[2];
+        $path = trim($m[2]);
+
+        // CommonMark angle-bracket destination: [label](<path with spaces.md>)
+        if (str_starts_with($path, '<') && str_ends_with($path, '>')) {
+            $path = substr($path, 1, -1);
+        }
+
+        // Obsidian alternative encoding for spaces: [label](path%20with%20spaces.md)
+        $path = str_replace('%20', ' ', $path);
 
         // Reject external links / any URI scheme (http:, mailto:, tel:, obsidian:, ...)
         if (preg_match('#^[a-z][a-z0-9+.-]*:#i', $path)) {
