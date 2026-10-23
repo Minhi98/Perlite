@@ -350,6 +350,31 @@ $(document).on('mousedown', function (e) {
 
 
 /**
+ * lists like Obsidian's reading view: <ul class="has-list-bullet"> and a
+ * <span class="list-bullet"> in each item, which Obsidian's and the themes'
+ * bullet styles use (e.g. Elysian's dashes); task items keep it hidden
+ */
+function obsidianListMarkup(root) {
+  if (!root) {
+    return;
+  }
+  root.querySelectorAll('ul').forEach(function (ul) {
+    if (ul.closest('.perlite-leaflet, .leaflet-container')) {
+      return;
+    }
+    ul.classList.add('has-list-bullet');
+    Array.from(ul.children).forEach(function (li) {
+      if (li.tagName !== 'LI' || (li.firstElementChild && li.firstElementChild.classList.contains('list-bullet'))) {
+        return;
+      }
+      var bullet = document.createElement('span');
+      bullet.className = 'list-bullet';
+      li.insertBefore(bullet, li.firstChild);
+    });
+  });
+}
+
+/**
  * Dataview (when enabled in the vault): inline fields are shown like Dataview's
  * reading view - [key:: value] as key and value, (key:: value) as the value
  * only, dates in Dataview's date format; a full-line "key:: value" stays as
@@ -567,6 +592,7 @@ function getContent(str, home = false, popHover = false, anchor = "") {
           // set content
           $("#mdContent").html(result);
           renderDataview($("#mdContent")[0]);
+          obsidianListMarkup($("#mdContent")[0]);
 
           // cssclasses from the note's front matter -> page container (like Obsidian)
           var previewView = $("#mdContent").closest(".markdown-preview-view");
@@ -830,6 +856,8 @@ function getContent(str, home = false, popHover = false, anchor = "") {
           $("#popUpContent").html(result);
           renderDataview($("#mdHoverContent")[0]);
           renderDataview($("#popUpContent")[0]);
+          obsidianListMarkup($("#mdHoverContent")[0]);
+          obsidianListMarkup($("#popUpContent")[0]);
 
           // set title
           var title = $("#mdHoverContent div.mdTitleHide").first().text() || "";

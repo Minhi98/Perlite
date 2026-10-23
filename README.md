@@ -25,6 +25,7 @@
 - **cssclasses:** `cssclasses` / `cssclass` in frontmatter is passed to the frontend.
 - **Empty tags:** empty non-void elements are output as `<div></div>` instead of `<div />`. Before, a title-only callout swallowed the rest of the page.
 - **Link lookup:** a `[[link]]` or Markdown link to a note that doesn't exist relative to the linking note is looked up like Obsidian does: from the vault root, then by name anywhere in the vault (shortest path wins). A `.md` extension in the link is dropped. Links that already worked (relative `../` links, same-folder links) are unchanged. Before, `[[Note]]` or `[[Folder/Note.md]]` from another folder led to a blank page.
+- **Wikilinks aren't reference definitions:** a line starting with `[[Note]]: …` (Dataview Serializer's `LIST` rows with a value) is shown as a link and text, like in Obsidian, instead of being read as a hidden Markdown link definition. Before, those rows were empty and later links to the same notes showed their full path in brackets.
 - **HTML comments:** hidden like in Obsidian's reading view, also with `HTML_SAFE_MODE=true` (then they're dropped from the page instead of passed through).
 - **Markdown links to notes:** `[text](Folder/My%20Note.md)` and `[![[image.png|opts]]](Note.md#Heading)` are internal links, like in Obsidian. They open in the same tab, with hover previews, built the same way as a `[[wikilink]]`. URLs (`https:`, `mailto:` …), `#anchor` links and links to files such as `.pdf` or images are unchanged. Before, these were treated as external links to the raw `.md` file, which Perlite's nginx config blocks.
 - **Heading link text:** `[[Page#Heading]]` without an alias shows as "Page > Heading", like Obsidian. Links to a heading on the page being viewed (`[[#Heading]]` or `[[This Page#Heading]]`) show just the heading text and scroll within the page. Same-page links use upstream's `#Heading` URL format.
@@ -48,6 +49,8 @@
 - **Edit in Obsidian:** the edit button sends the note's full path (`file=Folder/Note`), so notes with the same name (e.g. several `index.md`) open the right one.
 - **Remembered sidebars:** whether the left and right sidebars are collapsed is saved in the browser (localStorage) and restored on every page load, desktop layout only. A small script in `index.php`'s `<head>` applies it before the page is drawn, so there's no flash.
 - **Sidebar tags:** Fixed styling under themes like Elysian and added a setting to toggle showing Tags in the side bar.
+
+- **List markup:** bulleted lists get Obsidian's reading-view markup (`ul.has-list-bullet` and a `span.list-bullet` in each item), so Obsidian's and the theme's bullet styles apply (e.g. Elysian's dashes) instead of the browser's dots.
 
 ### Styles (`perlite.css`)
 - **Collapsed callouts:** always hidden, even when the theme sets a `display` on callout content (ITS columns and cards).

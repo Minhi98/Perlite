@@ -896,6 +896,18 @@ class PerliteParsedown extends Parsedown
         return $Block;
     }
 
+    # a line starting with a [[wikilink]] is never a link reference definition
+    # ("[label]: url"), like in Obsidian. Dataview Serializer writes list rows as
+    # "- [[Note.md|Note]]: value"; read as definitions, the rows disappeared and
+    # later links to those notes turned into links to the value.
+    protected function blockReference($Line)
+    {
+        if (str_starts_with($Line['text'], '[[')) {
+            return;
+        }
+        return parent::blockReference($Line);
+    }
+
     # HTML comments are hidden like in Obsidian's reading view, also with
     # HTML_SAFE_MODE (Dataview Serializer keeps its queries and result markers
     # in comments). In safe mode the comment is dropped instead of passed
@@ -1281,6 +1293,11 @@ class PerliteParsedown extends Parsedown
     # handle external obsidian Urls
     protected function inlineLink($Excerpt)
     {
+        // [[wikilinks]] are never Markdown links, not even reference-style ones
+        if (str_starts_with($Excerpt['text'], '[[')) {
+            return;
+        }
+
         $Element = array(
             'name' => 'a',
             'handler' => 'line',
