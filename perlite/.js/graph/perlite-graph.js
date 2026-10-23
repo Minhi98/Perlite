@@ -6,7 +6,7 @@
  * global graph (all notes, radial layout, focus on hover), tags as nodes,
  * visited pages, labels that fade in with zoom, drag / zoom, Ctrl/Cmd + G.
  * Perlite changes: hovering uses its own hit test (whole circle, at least
- * HIT_MIN px, and visible labels), labels keep their on-screen size while
+ * HIT_MIN px; labels don't count), tags only with the "Show Tags" setting, labels keep their on-screen size while
  * zooming, have an outline, and are hidden where they would overlap a more
  * important one; hovering a node shows its neighbours' labels.
  * Data comes from Perlite's graph (#allGraphNodes / #allGraphEdges, built from
@@ -142,6 +142,8 @@
     var height = Math.max(container.offsetHeight, 250);
     if (!width) return function () { };
 
+    // tag nodes follow the "Show Tags" setting (off by default)
+    var showTags = cfg.showTags && document.body.classList.contains('perlite-show-tags');
     var links = [];
     var tagSlugs = [];
     var validSlugs = new Set(data.keys());
@@ -149,7 +151,7 @@
       page.links.forEach(function (target) {
         if (validSlugs.has(target)) links.push({ source: source, target: target });
       });
-      if (cfg.showTags) {
+      if (showTags) {
         page.tags.forEach(function (tag) {
           if (cfg.removeTags.indexOf(tag) !== -1) return;
           var tagSlug = 'tags/' + tag;
@@ -349,7 +351,7 @@
     }
 
     // the node under a point of the canvas (CSS px): the nearest node whose
-    // circle (at least HIT_MIN px) contains it, else a node whose visible label does
+    // circle (at least HIT_MIN px) contains it; labels don't count
     function nodeAt(px, py) {
       var best = null, bestDist = Infinity;
       nodes.forEach(function (n) {
@@ -361,14 +363,7 @@
           bestDist = dist;
         }
       });
-      if (best) return best;
-      for (var i = nodeRenderData.length - 1; i >= 0; i--) {
-        var b = nodeRenderData[i].box;
-        if (b && nodeRenderData[i].label.alpha > 0.5 && px >= b[0] && px <= b[2] && py >= b[1] && py <= b[3]) {
-          return nodeRenderData[i].simulationData;
-        }
-      }
-      return null;
+      return best;
     }
 
     function setHover(id) {

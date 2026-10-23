@@ -775,25 +775,6 @@ $jsonGraphData = getfullGraph($rootDir);
                                     <div class="backlink-pane node-insert-event" style="position: relative;">
 
 
-                                        <div id="outline" class="outline" style="display: unset">
-                                            <div class="sidebar-top">
-                                                <h3>Content</h3>
-                                            </div>
-
-                                            <div id="toc"></div>
-
-                                        </div>
-
-                                        <div id="tags_container" class="outline" style="display: block">
-                                            <div class="sidebar-top">
-                                                <h3>Tags</h3>
-                                            </div>
-                                            <div class="tree-item-self" aria-label-position="left">
-                                                <div id="mytags" class="tree-item-inner"></div>
-                                            </div>
-                                        </div>
-
-
                                         <div id=localGraph>
                                             <h3>Graph</h3>
 
@@ -811,6 +792,25 @@ $jsonGraphData = getfullGraph($rootDir);
                                             <div class="tree-item-flair-outer"><span class="tree-item-flair"
                                                     id="nodeCount">0</span></div>
 
+                                        </div>
+
+
+                                        <div id="outline" class="outline" style="display: unset">
+                                            <div class="sidebar-top">
+                                                <h3>Content</h3>
+                                            </div>
+
+                                            <div id="toc"></div>
+
+                                        </div>
+
+                                        <div id="tags_container" class="outline" style="display: block">
+                                            <div class="sidebar-top">
+                                                <h3>Tags</h3>
+                                            </div>
+                                            <div class="tree-item-self" aria-label-position="left">
+                                                <div id="mytags" class="tree-item-inner"></div>
+                                            </div>
                                         </div>
 
 
@@ -1018,8 +1018,8 @@ $jsonGraphData = getfullGraph($rootDir);
                     <div class="setting-item mod-toggle">
                         <div class="setting-item-info">
                             <div class="setting-item-name">Show Tags</div>
-                            <div class="setting-item-description">Show the tags list in the right sidebar (hidden by
-                                default).</div>
+                            <div class="setting-item-description">Show the tags list in the right sidebar and tags in
+                                the graph (hidden by default).</div>
                         </div>
                         <div class="setting-item-control">
                             <div class="checkbox-container showTagsOption"><input type="checkbox" tabindex="0">

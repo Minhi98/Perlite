@@ -2774,6 +2774,10 @@ $(document).ready(function () {
     $('.showTagsOption').toggleClass('is-enabled', show);
     $('body').toggleClass('perlite-show-tags', show);
     localStorage.setItem('showTags', show ? 'true' : 'false');
+    // the Quartz graph shows tag nodes only with this setting
+    if (useQuartzGraph() && window.PerliteQuartzGraph && perliteGraphPath) {
+      window.PerliteQuartzGraph.rerender(document.getElementById('mynetwork'));
+    }
   });
 
   $('.quartzGraphOption').click(function (e) {

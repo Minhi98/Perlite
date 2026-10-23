@@ -762,3 +762,12 @@ body.perlite-quartz-graph-mode #mynetwork {
     width: 90%;
   }
 }
+
+/* right sidebar order: Graph, Content, Tags */
+#localGraph > h3 {
+  margin-top: 0;
+  padding-top: 0;
+}
+#outline .sidebar-top {
+  padding-top: 30px;
+}
