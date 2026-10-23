@@ -1,0 +1,195 @@
+/*
+ * Obsidian Leaflet maps in Perlite.
+ * Map styles from the Obsidian Leaflet plugin by Jeremy Valentine
+ * (https://github.com/javalent/obsidian-leaflet, MIT License), so maps look
+ * like they do in Obsidian (and theme rules for .block-language-leaflet apply).
+ */
+
+.block-language-leaflet {
+    margin: 0 auto;
+}
+
+.block-language-leaflet > .leaflet-container {
+    z-index: 0;
+    background-color: var(--background-secondary-alt);
+}
+
+.block-language-leaflet .leaflet-bar a {
+    font-style: unset;
+}
+
+/* div icon override */
+.block-language-leaflet .leaflet-div-icon img {
+    pointer-events: none;
+    cursor: pointer;
+}
+
+.block-language-leaflet .leaflet-div-icon {
+    background: transparent !important;
+    border: none !important;
+    width: 25px !important;
+    height: 25px !important;
+    margin-left: -12.5px !important;
+    margin-top: -25px !important;
+}
+
+.full-width-height,
+.full-width-height > * {
+    height: 100% !important;
+    width: 100% !important;
+}
+
+/* a marker that links to a note (page preview on hover) */
+.block-language-leaflet .leaflet-div-icon > a.perlite-leaflet-marker-link {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: none;
+    text-decoration: none;
+}
+
+.block-language-leaflet .leaflet-marker-link-popup > * {
+    animation: leaflet-pop-down 200ms forwards ease-in-out;
+}
+
+@keyframes leaflet-pop-down {
+    0% {
+        opacity: 0;
+        transform: scale(1);
+    }
+    20% {
+        opacity: 0.7;
+        transform: scale(1.02);
+    }
+    40% {
+        opacity: 1;
+        transform: scale(1.05);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.block-language-leaflet .leaflet-marker-link-popup > .leaflet-popup-content-wrapper {
+    background-color: rgba(0, 0, 0, 0.9) !important;
+    color: #dcddde !important;
+    padding: 5px 14px !important;
+    border-radius: 6px !important;
+    line-height: 20px !important;
+}
+.block-language-leaflet .leaflet-marker-link-popup > .leaflet-popup-content-wrapper > * {
+    margin: 0;
+    font-size: 14px;
+    text-align: center;
+}
+.block-language-leaflet .leaflet-marker-link-popup .leaflet-popup-tip {
+    background-color: rgba(0, 0, 0, 0.9) !important;
+    width: 12px;
+    height: 12px;
+}
+.block-language-leaflet .leaflet-marker-link-popup a.internal-link,
+.block-language-leaflet .leaflet-marker-link-popup a.external-link {
+    color: var(--link-color, #a88bfa);
+}
+
+.block-language-leaflet .leaflet-control-layers .leaflet-control-layers-selector {
+    appearance: auto;
+}
+
+.block-language-leaflet .leaflet-container .dark-mode {
+    filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+}
+
+/* Font Awesome controls (show all markers, reset zoom, filter, full screen) */
+.block-language-leaflet .leaflet-bar a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.block-language-leaflet .leaflet-bar a svg {
+    width: 14px;
+    height: 14px;
+}
+
+/** Filter Control */
+.block-language-leaflet .leaflet-control-expandable {
+    background: #fff;
+}
+.block-language-leaflet .leaflet-control-expandable:not(.expanded) > .leaflet-control-expandable-list {
+    display: none;
+}
+.block-language-leaflet .leaflet-control-expandable.expanded > .leaflet-control-expandable-icon {
+    display: none;
+}
+.block-language-leaflet .leaflet-control-expandable .input-container {
+    margin: 0;
+}
+.block-language-leaflet .leaflet-control-expandable.expanded .input-container {
+    padding: 6px 10px 6px 6px;
+    margin: 0;
+    color: #333;
+}
+.block-language-leaflet .leaflet-control-expandable-list .input-item {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+}
+.block-language-leaflet .leaflet-control-expandable-list .input-container .input-item > input {
+    top: 0px;
+    appearance: auto;
+    margin-right: 4px;
+}
+.block-language-leaflet .leaflet-control-expandable-list .input-container .input-item > label {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+}
+.block-language-leaflet .leaflet-control-expandable-list .input-container .input-item .leaflet-control-expandable-icon {
+    width: 18px;
+    height: 18px;
+    margin-right: 4px;
+}
+.block-language-leaflet .leaflet-control-expandable-list .leaflet-control-expandable-button-group {
+    margin-bottom: 6px;
+    padding: 6px 10px 0px 6px;
+    display: flex;
+    gap: 4px;
+}
+
+.block-language-leaflet .leaflet-pane.leaflet-geojson-pane {
+    z-index: 398;
+}
+.block-language-leaflet .leaflet-pane.leaflet-image-overlay-pane {
+    z-index: 397;
+}
+.block-language-leaflet .leaflet-pane.leaflet-base-layer-pane {
+    z-index: 300;
+}
+
+.leaflet-marker-icon svg {
+    filter: drop-shadow(1px 3px 3px black);
+}
+
+/* full screen */
+.block-language-leaflet:fullscreen {
+    width: 100% !important;
+    height: 100% !important;
+    background-color: var(--background-primary);
+}
+.block-language-leaflet:fullscreen > .leaflet-container {
+    height: 100% !important;
+}
+
+/* themes may limit image sizes, not for map tiles / images */
+.block-language-leaflet .leaflet-container img {
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 0;
+    margin: 0;
+}
+
+/* error message (bad parameters) */
+.block-language-leaflet > #leaflet-error {
+    white-space: pre-wrap;
+}

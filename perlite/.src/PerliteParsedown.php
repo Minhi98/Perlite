@@ -896,6 +896,36 @@ class PerliteParsedown extends Parsedown
         return $Block;
     }
 
+    # Obsidian Leaflet maps (```leaflet): a container perlite.js renders the map
+    # into, with the block's source and the note it belongs to (for its links)
+    protected function blockFencedCodeComplete($Block)
+    {
+        $Block = parent::blockFencedCodeComplete($Block);
+
+        $class = $Block['element']['text']['attributes']['class'] ?? '';
+        if ($class === 'language-leaflet') {
+            $Block['element'] = array(
+                'name' => 'div',
+                'handler' => 'element',
+                'attributes' => array(
+                    'class' => 'block-language-leaflet perlite-leaflet',
+                    'data-note' => $this->currentNotePath(),
+                ),
+                'text' => array(
+                    'name' => 'pre',
+                    'handler' => 'element',
+                    'attributes' => array('class' => 'perlite-leaflet-source'),
+                    'text' => array(
+                        'name' => 'code',
+                        'text' => $Block['element']['text']['text'],
+                    ),
+                ),
+            );
+        }
+
+        return $Block;
+    }
+
     # strip the fence indentation from the code lines
     protected function blockFencedCodeContinue($Line, $Block)
     {

@@ -143,6 +143,17 @@ h1, h2, h3, h4 {
   display: none;
 }
 
+/* Obsidian Leaflet maps: the block's source stays hidden, a placeholder shows
+   until the map is drawn (styles in .js/leaflet/perlite-leaflet.css) */
+.perlite-leaflet > pre.perlite-leaflet-source {
+  display: none;
+}
+.perlite-leaflet:not(.is-rendered) {
+  min-height: 120px;
+  background-color: var(--background-secondary);
+  border-radius: var(--radius-s, 4px);
+}
+
 /* hover preview: Obsidian's size (--popover-width x --popover-height), placed
    next to the link by perlite.js and kept inside the window */
 .popover.hover-popover {

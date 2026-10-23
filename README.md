@@ -67,6 +67,18 @@
 ### Page layout (`index.php`)
 - **Reading view markup:** the content pane is marked `data-mode="preview"` (reading view) instead of `source`, and the page title sits in `.mod-header.mod-ui`, like Obsidian's reading view. Themes that style the reading-view title now apply (e.g. a title background that fits the text instead of spanning the page).
 
+### Obsidian Leaflet maps (`leaflet.php`, `.js/leaflet/`)
+- **```leaflet blocks** from the [Obsidian Leaflet](https://github.com/javalent/obsidian-leaflet) plugin are shown as interactive maps, read only, using the plugin's syntax and coordinates:
+  - image maps (several `image:` layers, `bounds`) and real-world maps (`tileServer`, `osmLayer`, `tileOverlay`)
+  - zoom options, `height`/`width`, `darkMode`, `recenter`, `noUI`, `noScrollZoom`, `showAllMarkers`, `zoomFeatures`, `coordinates`/`zoomTag`
+  - markers placed on the map in Obsidian (read from `.obsidian/plugins/obsidian-leaflet-plugin/data.json`, matched by the map's `id`), with their saved overlays and drawn shapes
+  - `marker:` lines, `markerFile`, `markerFolder` and `markerTag`/`filterTag` (front matter `location`, `mapmarker`, `mapmarkers`, `mapoverlay`), `overlay:`, `overlayTag`, `geojson`/`geojsonFolder`, `imageOverlay`
+  - marker types and icons from the plugin's settings (and a `markers.json` next to the note), including layered icons and image icons
+- Markers show their link and description on hover (the plugin's tooltip setting) and open the linked note or URL on click. With the plugin's "note preview" setting on, hovering a marker also shows Perlite's page preview.
+- Controls: zoom, full screen, show all markers, reset zoom, layers, and a filter by marker type.
+- Not available: editing (adding, moving or deleting markers, drawing), command markers, GPX files, `linksTo`/`linksFrom` (they need Dataview's index) and the initiative tracker.
+- Leaflet 1.9.4, js-yaml and Font Awesome 5 (the plugin's icon set) are included and only loaded on pages with a map.
+
 # Perlite
   
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/secure-77/perlite) ![GitHub](https://img.shields.io/github/license/secure-77/perlite) ![GitHub last commit](https://img.shields.io/github/last-commit/secure-77/Perlite)

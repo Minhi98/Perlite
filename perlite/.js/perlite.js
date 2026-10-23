@@ -806,6 +806,9 @@ function getContent(str, home = false, popHover = false, anchor = "") {
         // canvas pan & zoom
         initCanvas();
 
+        // Obsidian Leaflet maps (```leaflet blocks)
+        renderLeafletMaps(popHover == false ? $("#mdContent")[0] : $("#mdHoverContent")[0]);
+
         //scroll to anchor
 
         if (anchor != "" && popHover == false) {
@@ -832,6 +835,61 @@ function getContent(str, home = false, popHover = false, anchor = "") {
     });
   }
 };
+
+/**
+ * Obsidian Leaflet maps: Leaflet and the map renderer are loaded the first
+ * time a note with a ```leaflet block is shown (.js/leaflet/)
+ */
+var perliteLeafletLoading = null;
+
+function loadLeafletAssets() {
+  if (window.perliteRenderLeafletMaps) {
+    return Promise.resolve();
+  }
+  if (perliteLeafletLoading) {
+    return perliteLeafletLoading;
+  }
+  var base = uriPath + '.js/leaflet/';
+  var css = function (href) {
+    return new Promise(function (resolve) {
+      var link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = href;
+      link.onload = link.onerror = function () { resolve(); };
+      document.head.appendChild(link);
+    });
+  };
+  var js = function (src) {
+    return new Promise(function (resolve, reject) {
+      var script = document.createElement('script');
+      script.src = src;
+      script.onload = function () { resolve(); };
+      script.onerror = function () { reject(new Error('Could not load ' + src)); };
+      document.head.appendChild(script);
+    });
+  };
+  perliteLeafletLoading = Promise.all([css(base + 'leaflet.css'), css(base + 'perlite-leaflet.css')])
+    .then(function () { return js(base + 'leaflet.js'); })
+    .then(function () { return js(base + 'js-yaml.min.js'); })
+    .then(function () { return js(base + 'fa-svg-core.min.js'); })
+    .then(function () { return js(base + 'perlite-leaflet.js'); })
+    .catch(function (e) {
+      perliteLeafletLoading = null;
+      throw e;
+    });
+  return perliteLeafletLoading;
+}
+
+function renderLeafletMaps(root) {
+  if (!root || !root.querySelector('.perlite-leaflet')) {
+    return;
+  }
+  loadLeafletAssets().then(function () {
+    window.perliteRenderLeafletMaps(root);
+  }).catch(function (e) {
+    console.error(e);
+  });
+}
 
 /**
  * init read-only canvas views (pan & zoom)
