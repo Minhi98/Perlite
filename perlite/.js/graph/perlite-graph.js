@@ -3,15 +3,23 @@
  * A port of the graph component of Quartz (https://github.com/jackyzha0/quartz,
  * @quartz-community/graph, MIT License, (c) jackyzha0 and contributors):
  * D3 force simulation, PixiJS (WebGL) rendering, local graph (depth 1) and a
- * global graph (all notes, radial layout, focus on hover), tags as nodes,
- * visited pages, labels that fade in with zoom, drag / zoom, Ctrl/Cmd + G.
- * Perlite changes: hovering uses its own hit test (whole circle, at least
- * HIT_MIN px; labels don't count), tags only with the "Show Tags" setting, labels keep their on-screen size while
- * zooming, have an outline, and are hidden where they would overlap a more
- * important one; hovering a node shows its neighbours' labels.
- * Data comes from Perlite's graph (#allGraphNodes / #allGraphEdges, built from
- * the Metadata Extractor plugin's metadata.json); colours from the theme's
- * Obsidian graph colours.
+ * global graph (all notes), tags as nodes, drag / zoom,
+ * Ctrl/Cmd + G.
+ * Perlite changes:
+ * - drawn like Obsidian's graph view, from the theme's Obsidian graph colours
+ *   (.graph-view.color-*): node / tag / line / text colours, the hovered node
+ *   and its links in the highlight colour with everything else faded, labels
+ *   under the nodes in the default sans-serif, thin lines, bigger nodes for
+ *   notes with more links, starts zoomed to fit (Quartz's current-page and
+ *   visited colours and its radial global layout dropped)
+ * - hovering uses its own hit test (whole circle, at least HIT_MIN px; labels
+ *   don't count); tags only with the "Show Tags" setting
+ * - labels keep their on-screen size while zooming and are hidden where they
+ *   would overlap a more important one; hovering shows the neighbours' labels
+ * - no jump on page changes: the layout is computed before the first frame,
+ *   starting from where the notes were in the previous graph
+ * Data comes from Perlite's graph (#allGraphNodes / #allGraphEdges: Perlite's
+ * own index, or the Metadata Extractor plugin's metadata.json).
  */
 (function () {
   'use strict';
@@ -21,37 +29,24 @@
 
   var LOCAL_CONFIG = {
     drag: true, zoom: true, depth: 1, scale: 1.1, repelForce: 0.5, centerForce: 0.3,
-    linkDistance: 30, fontSize: 0.6, opacityScale: 1, showTags: true, removeTags: [],
-    focusOnHover: false, enableRadial: false
+    linkDistance: 60, fontSize: 0.6, opacityScale: 1, showTags: true, removeTags: [],
+    focusOnHover: true, enableRadial: false, memory: 'local'
   };
   var GLOBAL_CONFIG = {
     drag: true, zoom: true, depth: -1, scale: 0.9, repelForce: 0.5, centerForce: 0.2,
     linkDistance: 30, fontSize: 0.6, opacityScale: 1, showTags: true, removeTags: [],
-    focusOnHover: true, enableRadial: true
+    focusOnHover: true, enableRadial: false, memory: 'global'
   };
 
-  var VISITED_KEY = 'perlite-graph-visited';
-
   var HIT_MIN = 9;     // px: smallest hover / click radius of a node on screen
-  var LABEL_GAP = 3;   // px between a node and its label
+  var LABEL_GAP = 4;   // px between a node and its label
   var LABEL_PAD = 2;   // px kept free around each label
+  var LABEL_HOVER_SHIFT = 6; // px the hovered node's label moves away (as in Obsidian)
+  var PRESETTLE_MS = 150;    // time allowed to lay the graph out before the first frame
 
-  function getVisited() {
-    try {
-      return new Set(JSON.parse(localStorage.getItem(VISITED_KEY) || '[]'));
-    } catch (e) {
-      return new Set();
-    }
-  }
-
-  function addVisited(slug) {
-    if (!slug) return;
-    try {
-      var visited = getVisited();
-      visited.add(slug);
-      localStorage.setItem(VISITED_KEY, JSON.stringify(Array.from(visited)));
-    } catch (e) { }
-  }
+  // where the notes were in the last local / global graph, so the next one
+  // starts from there (slug -> {x, y})
+  var layoutMemory = { local: new Map(), global: new Map() };
 
   /* ---------- data: Perlite's graph -> Quartz's index ---------- */
 
@@ -117,16 +112,16 @@
 
   function themeColors() {
     var body = getComputedStyle(document.body);
+    // Obsidian's graph view takes its colours from these classes (themes set
+    // them through --graph-* variables); labels use the default sans-serif
     return {
-      current: probeColor('graph-view color-fill-focused', '#c792ea'),   // Quartz --secondary
-      visited: probeColor('graph-view color-fill-highlight', '#82aaff'), // Quartz --tertiary
-      tagStroke: probeColor('graph-view color-fill-tag', '#82aaff'),
-      node: probeColor('graph-view color-fill', '#6c6c6c'),              // Quartz --gray
-      line: probeColor('graph-view color-line', '#d4d4d4'),              // Quartz --lightgray
-      text: probeColor('graph-view color-text', '#1a1a1a'),              // Quartz --dark
-      background: body.getPropertyValue('--graph-background').trim() || body.getPropertyValue('--background-secondary').trim() || body.getPropertyValue('--background-primary').trim() || '#f5f5f5',
-      tagFill: body.getPropertyValue('--background-primary').trim() || '#f5f5f5', // Quartz --light
-      font: body.getPropertyValue('--font-interface').trim() || body.fontFamily || 'inherit'
+      node: probeColor('graph-view color-fill', '#888888'),
+      tag: probeColor('graph-view color-fill-tag', '#4caf50'),
+      line: probeColor('graph-view color-line', '#555555'),
+      text: probeColor('graph-view color-text', '#dadada'),
+      highlight: probeColor('graph-view color-fill-highlight', '#7f6df2'),
+      lineHighlight: probeColor('graph-view color-line-highlight', '#7f6df2'),
+      font: body.getPropertyValue('--font-default').trim() || 'sans-serif'
     };
   }
 
@@ -137,7 +132,6 @@
     while (container.firstChild) container.removeChild(container.firstChild);
     if (!data) return function () { };
 
-    var visited = getVisited();
     var width = container.offsetWidth;
     var height = Math.max(container.offsetHeight, 250);
     if (!width) return function () { };
@@ -191,8 +185,6 @@
         id: slug,
         text: isTag ? '#' + slug.substring(5) : (page ? page.title : slug),
         tags: isTag || !page ? [] : page.tags,
-        x: Math.random() * width - width / 2,
-        y: Math.random() * height - height / 2,
         vx: 0, vy: 0
       };
       nodes.push(node);
@@ -205,6 +197,29 @@
         if (s && t) simLinks.push({ source: s, target: t });
       }
     });
+
+    // start from where the notes were in the previous graph (the local graph
+    // re-centred on the new page); new notes next to a note they link to, or
+    // in d3's default spiral when there is none
+    var memory = layoutMemory[cfg.memory] || new Map();
+    var origin = cfg.depth >= 0 && memory.get(currentSlug) || { x: 0, y: 0 };
+    var known = 0;
+    nodes.forEach(function (n) {
+      var p = memory.get(n.id);
+      if (p) { n.x = p.x - origin.x; n.y = p.y - origin.y; known++; }
+    });
+    if (known > 0) {
+      simLinks.forEach(function (l) {
+        [[l.source, l.target], [l.target, l.source]].forEach(function (pair) {
+          var n = pair[0], o = pair[1];
+          if (n.x == null && o.x != null) {
+            var a = Math.random() * 2 * Math.PI;
+            n.x = o.x + Math.cos(a) * cfg.linkDistance;
+            n.y = o.y + Math.sin(a) * cfg.linkDistance;
+          }
+        });
+      });
+    }
 
     var colors = themeColors();
 
@@ -225,8 +240,9 @@
       degree.set(l.source.id, (degree.get(l.source.id) || 0) + 1);
       degree.set(l.target.id, (degree.get(l.target.id) || 0) + 1);
     });
+    // notes with more links are bigger (as in Obsidian)
     function nodeRadius(n) {
-      return 2 + Math.sqrt(degree.get(n.id) || 0);
+      return Math.min(2 + 1.6 * Math.sqrt(degree.get(n.id) || 0), 16);
     }
 
     var simulation = d3.forceSimulation(nodes)
@@ -255,9 +271,19 @@
     var currentTransform = d3.zoomIdentity;
 
     function nodeColor(n) {
-      if (n.id === currentSlug) return colors.current;
-      if (visited.has(n.id) || n.id.startsWith('tags/')) return colors.visited;
+      if (n.id === hoveredNodeId) return colors.highlight;
+      if (n.id.startsWith('tags/')) return colors.tag;
       return colors.node;
+    }
+
+    function drawNode(n) {
+      var d = n.simulationData;
+      var color = nodeColor(d);
+      if (n.drawnColor === color) return;
+      n.drawnColor = color;
+      n.gfx.clear();
+      n.gfx.circle(0, 0, nodeRadius(d));
+      n.gfx.fill({ color: color });
     }
 
     function updateHoverInfo(newHoveredId) {
@@ -284,16 +310,20 @@
       });
     }
 
+    // hovering: the node and its links in the highlight colour, notes that
+    // aren't linked to it faded
+    var FADED = 0.2;
     function renderLinks() {
       linkRenderData.forEach(function (l) {
-        l.alpha = hoveredNodeId !== null ? (l.active ? 1 : 0.2) : 1;
-        l.color = l.active ? colors.node : colors.line;
+        l.alpha = hoveredNodeId !== null && cfg.focusOnHover ? (l.active ? 1 : FADED) : 1;
+        l.color = l.active ? colors.lineHighlight : colors.line;
       });
     }
 
     function renderNodes() {
       nodeRenderData.forEach(function (n) {
-        n.gfx.alpha = hoveredNodeId !== null && cfg.focusOnHover ? (n.active ? 1 : 0.2) : 1;
+        n.gfx.alpha = hoveredNodeId !== null && cfg.focusOnHover ? (n.active ? 1 : FADED) : 1;
+        drawNode(n);
       });
     }
 
@@ -303,32 +333,25 @@
     }
 
     nodes.forEach(function (n) {
-      var isTag = n.id.startsWith('tags/');
-      // labels are drawn at their on-screen size and scaled against the zoom,
-      // with an outline in the background colour so crossing lines don't hide them
+      // labels are drawn at their on-screen size and scaled against the zoom
       var label = new PIXI.Text({
         text: n.text,
-        style: {
-          fontSize: cfg.fontSize * 20, fill: colors.text, fontFamily: colors.font,
-          stroke: { color: colors.background, width: 3, join: 'round' }
-        },
+        style: { fontSize: cfg.fontSize * 22, fill: colors.text, fontFamily: colors.font },
         resolution: (window.devicePixelRatio || 1) * 2
       });
-      label.anchor.set(0.5, 1);
+      label.anchor.set(0.5, 0);
       label.alpha = 0;
       labelContainer.addChild(label);
 
       var gfx = new PIXI.Graphics();
-      gfx.circle(0, 0, nodeRadius(n));
-      gfx.fill({ color: isTag ? colors.tagFill : nodeColor(n) });
-      if (isTag) gfx.stroke({ width: 2, color: colors.tagStroke });
       gfx.eventMode = 'none';
       gfx.label = n.id;
 
       nodeContainer.addChild(gfx);
       nodeRenderData.push({
-        simulationData: n, gfx: gfx, label: label, color: nodeColor(n), alpha: 1, active: false,
-        labelW: label.width + LABEL_PAD * 2, labelH: label.height + LABEL_PAD * 2, box: null
+        simulationData: n, gfx: gfx, label: label, alpha: 1, active: false, drawnColor: null,
+        labelW: label.width + LABEL_PAD * 2, labelH: label.height + LABEL_PAD * 2, box: null,
+        side: 'below', shift: 0
       });
     });
 
@@ -436,6 +459,24 @@
       d3.select(app.canvas).call(zoom);
     }
 
+    // start zoomed so the whole graph fits (as Obsidian does)
+    function fitView() {
+      if (!zoom || nodes.length === 0) return;
+      var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      nodes.forEach(function (n) {
+        var r = nodeRadius(n);
+        x0 = Math.min(x0, n.x - r); x1 = Math.max(x1, n.x + r);
+        y0 = Math.min(y0, n.y - r); y1 = Math.max(y1, n.y + r);
+      });
+      // room for the labels: a margin at the sides and below
+      var mx = 40, my = 28;
+      var k = Math.min((width - 2 * mx) / Math.max(x1 - x0, 1), (height - 2 * my) / Math.max(y1 - y0, 1));
+      k = Math.max(0.25, Math.min(k, 2));
+      var cx = (x0 + x1) / 2 + width / 2, cy = (y0 + y1) / 2 + height / 2;
+      d3.select(app.canvas).call(zoom.transform,
+        d3.zoomIdentity.translate(width / 2 - cx * k, height / 2 - cy * k).scale(k));
+    }
+
     var degreeOf = function (n) { return degree.get(n.simulationData.id) || 0; };
 
     // which labels show: they fade in as you zoom in (all of them on hover:
@@ -443,7 +484,8 @@
     // more important one (hovered, neighbour, current page, more links) is hidden
     function updateLabels() {
       var k = currentTransform.k;
-      var zoomAlpha = Math.min(1, Math.max(0, (k * cfg.opacityScale - 1) / 1.5));
+      // fully shown from the default zoom, fading out as you zoom out
+      var zoomAlpha = Math.min(1, Math.max(0, (k * cfg.opacityScale - 0.6) / 0.4));
       var hovering = hoveredNodeId !== null;
       var order = nodeRenderData.slice().sort(function (a, b) {
         return rank(b) - rank(a);
@@ -468,25 +510,30 @@
       order.forEach(function (n) {
         var d = n.simulationData;
         var id = d.id;
-        var want = hovering ? (hoveredNeighbours.has(id) ? 1 : 0) : zoomAlpha;
+        var linked = hovering && hoveredNeighbours.has(id);
+        var want = hovering && cfg.focusOnHover ? (linked ? 1 : zoomAlpha * FADED) : zoomAlpha;
+        // the hovered node's label moves a little further away
+        n.shift += ((id === hoveredNodeId ? LABEL_HOVER_SHIFT : 0) - n.shift) * 0.3;
         n.box = null;
         if (want > 0 && d.x != null) {
-          // above the node, else below, right or left of it, whichever is free
+          // below the node (as in Obsidian), else above, right or left of it
           var p = screenPos(d);
-          var off = nodeRadius(d) * k + LABEL_GAP;
+          var off = nodeRadius(d) * k + LABEL_GAP + n.shift;
           var w = n.labelW, h = n.labelH, P = LABEL_PAD;
           var spots = [
-            { side: 'above', b: [p.x - w / 2, p.y - off - h + P, p.x + w / 2, p.y - off + P] },
             { side: 'below', b: [p.x - w / 2, p.y + off - P, p.x + w / 2, p.y + off + h - P] },
+            { side: 'above', b: [p.x - w / 2, p.y - off - h + P, p.x + w / 2, p.y - off + P] },
             { side: 'right', b: [p.x + off - P, p.y - h / 2, p.x + off + w - P, p.y + h / 2] },
             { side: 'left', b: [p.x - off - w + P, p.y - h / 2, p.x - off + P, p.y + h / 2] }
           ];
-          // the hovered node and its neighbours always get a label
-          var must = id === hoveredNodeId || (hovering && hoveredNeighbours.has(id));
+          // the hovered node always gets a label (its neighbours come next)
+          var must = id === hoveredNodeId;
           var spot = null;
           for (var si = 0; si < spots.length && !spot; si++) {
             var b = spots[si].b;
-            var free = (id === hoveredNodeId && si === 0) || cells(b, function (key) {
+            // spots that would be cut off at the edge don't count
+            var inside = b[0] >= 0 && b[1] >= 0 && b[2] <= width && b[3] <= height;
+            var free = (id === hoveredNodeId && si === 0) || inside && cells(b, function (key) {
               var placed = grid.get(key);
               if (!placed) return true;
               for (var i = 0; i < placed.length; i++) {
@@ -516,11 +563,11 @@
         // ease towards the target so labels don't flicker while the layout settles
         n.label.alpha += (want - n.label.alpha) * 0.3;
         if (Math.abs(want - n.label.alpha) < 0.02) n.label.alpha = want;
-        var s = (id === hoveredNodeId ? 1.1 : 1) / k;
+        var s = 1 / k;
         n.label.scale.set(s, s);
         if (d.x != null) {
-          var gap = nodeRadius(d) + LABEL_GAP / k;
-          var side = n.side || 'above';
+          var gap = nodeRadius(d) + (LABEL_GAP + n.shift) / k;
+          var side = n.side;
           n.label.position.set(
             d.x + width / 2 + (side === 'right' ? gap : side === 'left' ? -gap : 0),
             d.y + height / 2 + (side === 'below' ? gap : side === 'above' ? -gap : 0));
@@ -543,7 +590,7 @@
         l.gfx.clear();
         l.gfx.moveTo(d.source.x + width / 2, d.source.y + height / 2);
         l.gfx.lineTo(d.target.x + width / 2, d.target.y + height / 2);
-        l.gfx.stroke({ alpha: l.alpha, width: 1, color: l.color });
+        l.gfx.stroke({ alpha: l.alpha, width: 1 / currentTransform.k, color: l.color });
       });
       requestAnimationFrame(animate);
     }
@@ -562,12 +609,32 @@
       zoom: function () { return currentTransform.k; }
     };
 
+    // lay the graph out before the first frame (Quartz animates it from random
+    // positions, which makes the graph jump on every page change); notes kept
+    // from the previous graph only need a nudge
+    simulation.stop();
+    if (known > nodes.length / 2) simulation.alpha(0.3);
+    var settleUntil = performance.now() + PRESETTLE_MS;
+    while (simulation.alpha() > 0.02 && performance.now() < settleUntil) {
+      simulation.tick();
+    }
+    fitView();
     simulation.on('tick', function () { });
     simulation.restart();
     renderPixiFromD3();
     animate();
 
+    function remember() {
+      if (!layoutMemory[cfg.memory]) return;
+      var m = layoutMemory[cfg.memory];
+      m.clear();
+      nodes.forEach(function (n) {
+        if (n.x != null) m.set(n.id, { x: n.x, y: n.y });
+      });
+    }
+
     return function cleanup() {
+      remember();
       stopped = true;
       simulation.stop();
       try { app.destroy(true); } catch (e) { }
@@ -616,7 +683,6 @@
 
   function renderLocal(host, slug) {
     currentSlug = slug;
-    addVisited(slug);
     if (!host || !host.offsetParent) return; // hidden: rendered when shown
     var token = ++localToken;
     if (localCleanup) { localCleanup(); localCleanup = null; }
