@@ -8,6 +8,7 @@ WORKDIR /var/www/perlite/
 COPY ./index.php ./
 COPY ./helper.php ./
 COPY ./content.php ./
+COPY ./leaflet.php ./
 COPY ./*.svg ./
 COPY ./*.ico ./
 COPY ./.styles/ ./.styles/

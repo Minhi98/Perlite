@@ -78,6 +78,7 @@
 - Controls: zoom, full screen, show all markers, reset zoom, layers, and a filter by marker type.
 - Not available: editing (adding, moving or deleting markers, drawing), command markers, GPX files, `linksTo`/`linksFrom` (they need Dataview's index) and the initiative tracker.
 - Leaflet 1.9.4, js-yaml and Font Awesome 5 (the plugin's icon set) are included and only loaded on pages with a map.
+- `perlite/Dockerfile` copies `leaflet.php` into the image (the upstream Dockerfile copies each PHP file by name).
 
 # Perlite
   

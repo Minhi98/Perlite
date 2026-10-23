@@ -343,7 +343,14 @@
 
     return fetch(window.uriPath + 'leaflet.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request)
-    }).then(function (r) { return r.json(); }).then(function (data) {
+    }).then(function (r) {
+      // anything but JSON (a 404 or PHP error page) means leaflet.php isn't working
+      var type = r.headers.get('Content-Type') || '';
+      if (!r.ok || type.indexOf('json') === -1) {
+        throw new Error('Could not load the map data: leaflet.php answered HTTP ' + r.status + (r.ok ? ' (' + type + ')' : '') + '. Check that leaflet.php is in the Perlite folder (and in the Docker image).');
+      }
+      return r.json();
+    }).then(function (data) {
       return build(container, params, data, { imageOverlays: imageOverlays, note: note });
     }).catch(function (e) {
       console.error(e);
