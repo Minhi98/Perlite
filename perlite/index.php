@@ -835,7 +835,7 @@ $jsonGraphData = getfullGraph($rootDir);
 </div>
 <!-- Graph settings -->
 <div style="display: none">
-    <div>
+    <div id="graphData" data-signature="<?php echo md5($jsonGraphData); ?>">
         <?php echo $jsonGraphData; ?>
     </div>
     <p class="graph-view color-line"></p>

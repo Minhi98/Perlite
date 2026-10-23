@@ -736,8 +736,13 @@ function getContent(str, home = false, popHover = false, anchor = "") {
           });
 
 
-          // trigger graph render on side bar
-          renderGraph(false, str);
+          // trigger graph render on side bar, with the vault's current links
+          var graphToken = ++graphRefreshToken;
+          refreshGraphData().always(function () {
+            if (graphToken === graphRefreshToken) {
+              renderGraph(false, str);
+            }
+          });
 
           //resize graph on windows rezise
           $(window).resize(function () {
@@ -1499,6 +1504,31 @@ function openGraphNode(slug, evt) {
   } else {
     window.open(url, '_self');
   }
+}
+
+// pages load via AJAX, so the graph data embedded in index.php would go stale
+// as the vault changes; fetch it again when the server's copy differs
+var graphRefreshToken = 0;
+function refreshGraphData() {
+  var holder = $("#graphData");
+  if (holder.length == 0) {
+    return $.Deferred().resolve().promise();
+  }
+  return $.ajax({
+    url: uriPath + "content.php?graph=" + encodeURIComponent(holder.attr("data-signature") || ""),
+    dataType: "text",
+    cache: false,
+    success: function (result, status, xhr) {
+      var signature = xhr.getResponseHeader("X-Graph-Signature");
+      if (xhr.status != 200 || !signature) {
+        return;
+      }
+      holder.html(result).attr("data-signature", signature);
+      if (window.PerliteQuartzGraph) {
+        window.PerliteQuartzGraph.invalidate();
+      }
+    }
+  });
 }
 
 function graphSlug(path) {

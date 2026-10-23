@@ -43,6 +43,23 @@ if (isset($_GET['search'])) {
 }
 
 
+// graph data, so the graph follows vault changes while browsing (pages load
+// via AJAX, not a full reload). Answers 204 when the client's copy is current.
+if (isset($_GET['graph'])) {
+
+	menu($rootDir);
+	$graphData = getfullGraph($rootDir);
+	$signature = md5($graphData);
+	header('Cache-Control: no-store');
+	if (is_string($_GET['graph']) && $_GET['graph'] === $signature) {
+		http_response_code(204);
+	} else {
+		header('X-Graph-Signature: ' . $signature);
+		echo $graphData;
+	}
+}
+
+
 // parse content for home site
 if (isset($_GET['home'])) {
 

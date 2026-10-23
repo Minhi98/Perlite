@@ -568,6 +568,10 @@
       if (localCleanup) { localCleanup(); localCleanup = null; }
       if (host) host.innerHTML = '';
     },
+    invalidate: function () {
+      // new graph data: re-read it on the next render
+      cachedData = null;
+    },
     rerender: function (host) {
       cachedData = null;
       renderLocal(host, currentSlug);

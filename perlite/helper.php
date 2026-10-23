@@ -601,8 +601,10 @@ function getfullGraph($rootDir)
 
 
 
+	// without the Metadata Extractor plugin's metadata.json, Perlite indexes
+	// the notes itself (like Quartz does)
 	if (!is_file($jsonMetadaFile)) {
-		return;
+		return buildVaultGraph($rootDir);
 	}
 
 	// check if metadata file has changed
@@ -771,6 +773,208 @@ function getfullGraph($rootDir)
 	fclose($metadaTempFile_handler);
 
 	return $graphHTML;
+}
+
+// graph data from the notes themselves (used when there's no metadata.json):
+// links ([[wikilinks]], embeds, links in front matter, Markdown links to notes)
+// and tags (front matter and text), like Obsidian's graph. Code, %%comments%%
+// and HTML comments are left out (e.g. Dataview Serializer's query text).
+// Links resolve like Obsidian: relative to the note, from the vault root, then
+// by name (shortest path). Only notes Perlite shows (HIDE_FOLDERS respected).
+// Cached in TEMP_PATH until a note is added, removed or changed.
+function buildVaultGraph($rootDir)
+{
+	global $avFiles, $tempPath;
+
+	$notes = array();
+	$signature = '';
+	foreach (array_unique($avFiles) as $path) {
+		$file = $rootDir . $path . '.md';
+		if (str_starts_with(basename($path), '.') || !is_file($file)) {
+			continue;
+		}
+		$notes[] = $path;
+		$signature .= $path . '|' . filemtime($file) . '|' . filesize($file) . "\n";
+	}
+	sort($notes);
+	$signature = md5($signature);
+
+	$cacheFile = $tempPath . '/graph_' . md5(realpath($rootDir) ?: $rootDir) . '.html';
+	if (is_file($cacheFile)) {
+		$cached = file_get_contents($cacheFile);
+		if ($cached !== false && str_starts_with($cached, '<!--' . $signature . '-->')) {
+			return $cached;
+		}
+	}
+
+	// lower-case path / file name -> note, for link lookups
+	$byPath = array();
+	$byName = array();
+	foreach ($notes as $path) {
+		$byPath[mb_strtolower($path)] = $path;
+		$byName[mb_strtolower(basename($path))][] = $path;
+	}
+	$resolve = function ($target, $noteDir) use ($byPath, $byName) {
+		$target = trim(rawurldecode($target));
+		$target = preg_replace('/[#^].*$/', '', $target);
+		$target = preg_replace('/\.md$/i', '', trim($target));
+		if ($target === '') {
+			return null; // attachments (images, pdf ...) never match a note, so they aren't nodes
+		}
+		foreach (array($noteDir . '/' . $target, '/' . $target) as $candidate) {
+			$key = mb_strtolower(normalizeGraphPath($candidate));
+			if (isset($byPath[$key])) {
+				return $byPath[$key];
+			}
+		}
+		$name = mb_strtolower(basename($target));
+		if (empty($byName[$name])) {
+			return null;
+		}
+		$suffix = mb_strtolower('/' . ltrim(normalizeGraphPath('/' . $target), '/'));
+		$best = null;
+		foreach ($byName[$name] as $path) {
+			if (str_ends_with(mb_strtolower($path), $suffix) && ($best === null || strlen($path) < strlen($best))) {
+				$best = $path;
+			}
+		}
+		return $best;
+	};
+
+	$graphNodes = array();
+	$graphEdges = array();
+	$nodeIds = array();
+	$tagIds = array();
+	$edgeSet = array();
+	$degree = array();
+
+	foreach ($notes as $path) {
+		$nodeIds[$path] = count($graphNodes);
+		$graphNodes[] = array('id' => $nodeIds[$path], 'label' => basename($path), 'title' => ltrim($path, '/'));
+	}
+
+	$addEdge = function ($from, $to) use (&$graphEdges, &$edgeSet, &$degree) {
+		if ($from === $to) {
+			return;
+		}
+		$key = min($from, $to) . '-' . max($from, $to);
+		if (isset($edgeSet[$key])) {
+			return;
+		}
+		$edgeSet[$key] = true;
+		$graphEdges[] = array('from' => $from, 'to' => $to);
+		$degree[$from] = ($degree[$from] ?? 0) + 1;
+		$degree[$to] = ($degree[$to] ?? 0) + 1;
+	};
+
+	foreach ($notes as $path) {
+		$text = (string) file_get_contents($rootDir . $path . '.md');
+		$noteDir = substr($path, 0, (int) strrpos($path, '/'));
+		$from = $nodeIds[$path];
+
+		// front matter: tags, and links in properties
+		$frontmatter = '';
+		if (preg_match('/^---\s*\R(.*?)\R---\s*(\R|$)/s', $text, $m)) {
+			$frontmatter = $m[1];
+			$text = substr($text, strlen($m[0]));
+		}
+		$tags = graphFrontmatterTags($frontmatter);
+
+		// leave out code, %%comments%% and HTML comments
+		$body = preg_replace('/^([ \t>]*)(`{3,}|~{3,}).*?^\1\2[`~]*[ \t]*$/ms', '', $text);
+		$body = preg_replace('/`[^`\n]*`/', '', $body);
+		$body = preg_replace('/%%.*?%%/s', '', $body);
+		$body = preg_replace('/<!--.*?-->/s', '', $body);
+
+		preg_match_all('/(?<=^|\s|\()#([\p{L}\p{N}_\/-]*[\p{L}_\/-][\p{L}\p{N}_\/-]*)/u', $body, $inline);
+		$tags = array_merge($tags, $inline[1]);
+
+		$targets = array();
+		preg_match_all('/\[\[([^\[\]]+?)\]\]/', $frontmatter . "\n" . $body, $wiki);
+		foreach ($wiki[1] as $link) {
+			$targets[] = explode('|', str_replace('\|', '|', $link))[0];
+		}
+		preg_match_all('/(?<!!)\[[^\[\]]*\]\(\s*(<[^>]+>|[^)\s]+)\s*\)/', $body, $md);
+		foreach ($md[1] as $link) {
+			$link = trim($link, '<>');
+			if (!preg_match('#^([a-z][a-z0-9+.-]*:|//|\#)#i', $link)) {
+				$targets[] = $link;
+			}
+		}
+		foreach ($targets as $target) {
+			$to = $resolve($target, $noteDir);
+			if ($to !== null) {
+				$addEdge($from, $nodeIds[$to]);
+			}
+		}
+
+		$seen = array();
+		foreach ($tags as $tag) {
+			$tag = ltrim(trim($tag), '#');
+			$key = mb_strtolower($tag);
+			if ($tag === '' || isset($seen[$key])) {
+				continue;
+			}
+			$seen[$key] = true;
+			if (!isset($tagIds[$key])) {
+				$tagIds[$key] = count($graphNodes);
+				$graphNodes[] = array('id' => $tagIds[$key], 'label' => '#' . $tag, 'title' => '#' . $tag, 'group' => 'tag');
+			}
+			$addEdge($from, $tagIds[$key]);
+		}
+	}
+
+	foreach ($graphNodes as &$node) {
+		if (isset($degree[$node['id']])) {
+			$node['value'] = $degree[$node['id']];
+		}
+	}
+	unset($node);
+
+	$graphHTML = '<div id="allGraphNodes" style="display: none">' . htmlspecialchars(json_encode($graphNodes, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), ENT_NOQUOTES)
+		. '</div><div id="allGraphEdges" style="display: none">' . json_encode($graphEdges, JSON_UNESCAPED_SLASHES) . '</div>';
+
+	@file_put_contents($cacheFile, '<!--' . $signature . '-->' . $graphHTML);
+	return '<!--' . $signature . '-->' . $graphHTML;
+}
+
+function normalizeGraphPath($path)
+{
+	$out = array();
+	foreach (explode('/', str_replace('\\', '/', $path)) as $seg) {
+		if ($seg === '' || $seg === '.') {
+			continue;
+		}
+		if ($seg === '..') {
+			array_pop($out);
+			continue;
+		}
+		$out[] = $seg;
+	}
+	return '/' . implode('/', $out);
+}
+
+// tags in front matter: "tags: [a, b]", "tags: a b" or a "- a" list (also "tag:")
+function graphFrontmatterTags($frontmatter)
+{
+	$tags = array();
+	$lines = preg_split('/\R/', $frontmatter);
+	foreach ($lines as $i => $line) {
+		if (!preg_match('/^tags?\s*:\s*(.*)$/i', $line, $m)) {
+			continue;
+		}
+		$value = trim($m[1]);
+		if ($value === '') {
+			for ($j = $i + 1; $j < count($lines) && preg_match('/^\s*-\s*(.+)$/', $lines[$j], $item); $j++) {
+				$tags[] = trim($item[1], " \t'\"");
+			}
+		} else {
+			foreach (preg_split('/[\s,]+/', trim($value, '[]')) as $tag) {
+				$tags[] = trim($tag, " \t'\"");
+			}
+		}
+	}
+	return array_filter($tags, 'strlen');
 }
 
 function removeExtension($path)
