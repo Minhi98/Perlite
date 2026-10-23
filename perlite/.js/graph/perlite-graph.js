@@ -247,15 +247,22 @@
       return Math.min(2 + 1.6 * Math.sqrt(degree.get(n.id) || 0), 16);
     }
 
+    // links are springs; d3's default makes a note with one link follow its
+    // neighbour rigidly, half of that lets it trail behind like in Obsidian
+    var linkCount = function (n) { return degree.get(n.id) || 1; };
     var simulation = d3.forceSimulation(nodes)
+      // more friction than d3's default 0.4, so notes glide instead of snapping
+      .velocityDecay(0.55)
       .force('charge', d3.forceManyBody().strength(-100 * cfg.repelForce).distanceMax(cfg.repelRange))
-      .force('center', d3.forceCenter().strength(cfg.centerForce))
       // every node is pulled towards the middle (like Obsidian's centre force),
       // and repulsion only reaches so far, so notes without links stay near
-      // the rest instead of drifting off (Quartz only re-centres the whole graph)
+      // the rest instead of drifting off. (Quartz's forceCenter is gone: it
+      // shifts the whole graph to keep its centre still, so dragging one note
+      // moved every other note the opposite way.)
       .force('x', d3.forceX(0).strength(cfg.gravity))
       .force('y', d3.forceY(0).strength(cfg.gravity))
-      .force('link', d3.forceLink(simLinks).distance(cfg.linkDistance))
+      .force('link', d3.forceLink(simLinks).distance(cfg.linkDistance)
+        .strength(function (l) { return 0.5 / Math.min(linkCount(l.source), linkCount(l.target)); }))
       .force('collide', d3.forceCollide().radius(nodeRadius).iterations(3));
     if (cfg.enableRadial) {
       var radius = Math.min(width, height) / 2 * 0.8;
@@ -420,7 +427,8 @@
       var drag = d3.drag().container(app.canvas)
         .subject(function (evt) { return nodeAt(evt.x, evt.y); })
         .on('start', function (evt) {
-          if (!evt.active) simulation.alphaTarget(1).restart();
+          // gentle reheat (Quartz uses 1, which shakes up the whole graph)
+          if (!evt.active) simulation.alphaTarget(0.3).restart();
           evt.subject.fx = evt.subject.x;
           evt.subject.fy = evt.subject.y;
           var x = (evt.x - currentTransform.x) / currentTransform.k - width / 2;
@@ -613,7 +621,12 @@
         return nodeRenderData.map(function (n) { return { id: n.simulationData.id, alpha: n.label.alpha, box: n.box }; });
       },
       hovered: function () { return hoveredNodeId; },
-      zoom: function () { return currentTransform.k; }
+      zoom: function () { return currentTransform.k; },
+      world: function () {
+        var o = {};
+        nodes.forEach(function (n) { o[n.id] = [n.x, n.y]; });
+        return o;
+      }
     };
 
     // lay the graph out before the first frame (Quartz animates it from random
