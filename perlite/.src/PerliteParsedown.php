@@ -956,6 +956,20 @@ class PerliteParsedown extends Parsedown
         return parent::inlineMarkup($Excerpt);
     }
 
+    # tables sit in a box that scrolls sideways when a table is wider than the
+    # page, so a wide table doesn't make the whole page scroll (Obsidian does
+    # the same with its table wrapper)
+    protected function blockTableComplete($Block)
+    {
+        $Block['element'] = array(
+            'name' => 'div',
+            'handler' => 'element',
+            'attributes' => array('class' => 'perlite-table-wrapper'),
+            'text' => $Block['element'],
+        );
+        return $Block;
+    }
+
     # Obsidian Leaflet maps (```leaflet): a container perlite.js renders the map
     # into, with the block's source and the note it belongs to (for its links)
     protected function blockFencedCodeComplete($Block)

@@ -770,3 +770,30 @@ body.perlite-quartz-graph-mode #mynetwork {
 #outline .sidebar-top {
   padding-top: 30px;
 }
+
+/* nothing in a note makes the page scroll sideways: wide tables scroll inside
+   their own box (.perlite-table-wrapper, added by PerliteParsedown), code
+   blocks scroll inside theirs, media shrink to fit, long words and links wrap */
+.perlite-table-wrapper {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.perlite-table-wrapper > table {
+  margin-left: 0;
+  margin-right: 0;
+}
+.markdown-rendered pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.markdown-rendered :is(img, video, iframe, svg, canvas):not(.perlite-quartz-graph *) {
+  max-width: 100%;
+}
+.markdown-rendered :is(p, li, blockquote, .callout-content) {
+  overflow-wrap: break-word;
+}
+.markdown-preview-view.markdown-rendered {
+  overflow-x: hidden;
+}
+
