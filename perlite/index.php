@@ -68,6 +68,15 @@ $jsonGraphData = getfullGraph($rootDir);
 <body
     class="theme-dark mod-windows is-frameless is-hidden-frameless obsidian-app styled-scrollbars show-ribbon show-view-header is-maximized is-focused show-inline-title"
     style="--zoom-factor:1; --font-text-size: <?php echo $font_size; ?>px;"></body>
+<script>
+    // graph style before the first paint, so the sidebar keeps the Quartz graph's
+    // size while it loads (not the Perlite graph's half-height box)
+    try {
+        if (localStorage.getItem('graphStyle') !== 'perlite') {
+            document.body.classList.add('perlite-quartz-graph-mode');
+        }
+    } catch (e) { }
+</script>
 <title>
     <?php echo $title ?>
 </title>

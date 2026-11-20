@@ -693,6 +693,11 @@ body.perlite-quartz-graph-mode #localGraph {
 body.perlite-quartz-graph-mode #mynetwork {
   height: auto;
 }
+/* the graph's space (.graph-outer below) is kept while it loads */
+body.perlite-quartz-graph-mode #mynetwork:empty {
+  height: 250px;
+  margin: 0.5em 0;
+}
 .graph-outer.perlite-quartz-graph {
   border-radius: 5px;
   border: 1px solid var(--background-modifier-border);
