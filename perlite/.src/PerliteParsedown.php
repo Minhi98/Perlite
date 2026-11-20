@@ -978,13 +978,24 @@ class PerliteParsedown extends Parsedown
 
         $class = $Block['element']['text']['attributes']['class'] ?? '';
         if ($class === 'language-leaflet') {
+            $attributes = array(
+                'class' => 'block-language-leaflet perlite-leaflet',
+                'data-note' => $this->currentNotePath(),
+            );
+            // reserve the map's height (the plugin's default is 500px) so the
+            // page doesn't shift when the map is drawn; % heights are worked
+            // out in the browser
+            $height = '500px';
+            if (preg_match('/^\s*height\s*:\s*["\']?([^"\'\s]+)/mi', $Block['element']['text']['text'], $m)) {
+                $height = preg_match('/^\d+(\.\d+)?px$/', $m[1]) ? $m[1] : null;
+            }
+            if ($height !== null) {
+                $attributes['style'] = 'height: ' . $height;
+            }
             $Block['element'] = array(
                 'name' => 'div',
                 'handler' => 'element',
-                'attributes' => array(
-                    'class' => 'block-language-leaflet perlite-leaflet',
-                    'data-note' => $this->currentNotePath(),
-                ),
+                'attributes' => $attributes,
                 'text' => array(
                     'name' => 'pre',
                     'handler' => 'element',

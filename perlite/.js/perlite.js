@@ -737,9 +737,13 @@ function getContent(str, home = false, popHover = false, anchor = "") {
 
 
           // trigger graph render on side bar, with the vault's current links
+          // draw the graph straight away with the data the page has, and again
+          // only if the vault changed since (the layout carries over, so it
+          // doesn't jump)
+          renderGraph(false, str);
           var graphToken = ++graphRefreshToken;
-          refreshGraphData().always(function () {
-            if (graphToken === graphRefreshToken) {
+          refreshGraphData().done(function (result, status, xhr) {
+            if (graphToken === graphRefreshToken && xhr && xhr.status == 200 && xhr.getResponseHeader("X-Graph-Signature")) {
               renderGraph(false, str);
             }
           });
@@ -1052,6 +1056,21 @@ function getContent(str, home = false, popHover = false, anchor = "") {
  */
 var perliteLeafletLoading = null;
 
+// load scripts that depend on each other: they download at the same time and
+// run in the given order (async = false), instead of one request after another
+function loadScriptsInOrder(srcs) {
+  return Promise.all(srcs.map(function (src) {
+    return new Promise(function (resolve, reject) {
+      var script = document.createElement('script');
+      script.src = src;
+      script.async = false;
+      script.onload = function () { resolve(); };
+      script.onerror = function () { reject(new Error('Could not load ' + src)); };
+      document.head.appendChild(script);
+    });
+  }));
+}
+
 function loadLeafletAssets() {
   if (window.perliteRenderLeafletMaps) {
     return Promise.resolve();
@@ -1069,20 +1088,11 @@ function loadLeafletAssets() {
       document.head.appendChild(link);
     });
   };
-  var js = function (src) {
-    return new Promise(function (resolve, reject) {
-      var script = document.createElement('script');
-      script.src = src;
-      script.onload = function () { resolve(); };
-      script.onerror = function () { reject(new Error('Could not load ' + src)); };
-      document.head.appendChild(script);
-    });
-  };
-  perliteLeafletLoading = Promise.all([css(base + 'leaflet.css'), css(base + 'perlite-leaflet.css')])
-    .then(function () { return js(base + 'leaflet.js'); })
-    .then(function () { return js(base + 'js-yaml.min.js'); })
-    .then(function () { return js(base + 'fa-svg-core.min.js'); })
-    .then(function () { return js(base + 'perlite-leaflet.js'); })
+  // styles and scripts all download at once
+  perliteLeafletLoading = Promise.all([
+    css(base + 'leaflet.css'), css(base + 'perlite-leaflet.css'),
+    loadScriptsInOrder([base + 'leaflet.js', base + 'js-yaml.min.js', base + 'fa-svg-core.min.js', base + 'perlite-leaflet.js'])
+  ])
     .catch(function (e) {
       perliteLeafletLoading = null;
       throw e;
@@ -1463,18 +1473,8 @@ function loadQuartzGraph() {
   if (perliteGraphLoading) {
     return perliteGraphLoading;
   }
-  var js = function (src) {
-    return new Promise(function (resolve, reject) {
-      var script = document.createElement('script');
-      script.src = uriPath + '.js/graph/' + src;
-      script.onload = function () { resolve(); };
-      script.onerror = function () { reject(new Error('Could not load ' + src)); };
-      document.head.appendChild(script);
-    });
-  };
-  perliteGraphLoading = js('d3.min.js')
-    .then(function () { return js('pixi.min.js'); })
-    .then(function () { return js('perlite-graph.js'); })
+  var base = uriPath + '.js/graph/';
+  perliteGraphLoading = loadScriptsInOrder([base + 'd3.min.js', base + 'pixi.min.js', base + 'perlite-graph.js'])
     .then(function () {
       window.PerliteQuartzGraph.setCallbacks({ open: openGraphNode });
       return window.PerliteQuartzGraph;
@@ -2194,6 +2194,12 @@ function showTooltip(el, text) {
 
 // on document ready stuff
 $(document).ready(function () {
+
+  // the graph's scripts download while the page's content is fetched, so the
+  // graph can be drawn as soon as the content is in
+  if (useQuartzGraph()) {
+    loadQuartzGraph().catch(function (e) { console.error(e); });
+  }
 
 
   // load settings from storage
