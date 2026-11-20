@@ -32,7 +32,20 @@ $jsonGraphData = getfullGraph($rootDir);
             if (window.innerWidth >= 990) {
                 if (localStorage.getItem('leftSidebarCollapsed') === 'true') document.documentElement.classList.add('perlite-restore-left-collapsed');
                 if (localStorage.getItem('rightSidebarCollapsed') === 'true') document.documentElement.classList.add('perlite-restore-right-collapsed');
+            } else {
+                // phones: the file list is a drawer that starts closed (perlite.js
+                // closes it at start-up too)
+                document.documentElement.classList.add('perlite-restore-left-collapsed');
             }
+            // sidebar widths from the last visit (or a sixth of the window, as
+            // perlite.js sets them) from the first frame, so the page doesn't
+            // start with 450px sidebars and then resize
+            var sidebarWidth = function (key) {
+                var saved = localStorage.getItem(key);
+                return saved && /^\d+(\.\d+)?px$/.test(saved) ? saved : (window.innerWidth / 6) + 'px';
+            };
+            document.documentElement.style.setProperty('--perlite-left-width', sidebarWidth('leftSizePanel'));
+            document.documentElement.style.setProperty('--perlite-right-width', sidebarWidth('rightSizePanel'));
         } catch (e) { }
     </script>
     <meta charset="utf-8">
@@ -44,6 +57,21 @@ $jsonGraphData = getfullGraph($rootDir);
     <script src="<?php echo $uriPath ?>.js/highlight.min.js"></script>
 
     <?php echo loadSettings($rootDir); ?>
+    <script>
+        // the theme chosen in Settings (if it isn't the vault's own) is switched
+        // on here, before the page is first drawn, rather than by perlite.js later
+        try {
+            (function () {
+                var chosen = localStorage.getItem('Theme');
+                if (!chosen) return;
+                var links = document.querySelectorAll('link.theme');
+                for (var i = 0; i < links.length; i++) {
+                    var on = links[i].id === chosen;
+                    if (links[i].disabled === on) links[i].disabled = !on;
+                }
+            })();
+        } catch (e) { }
+    </script>
 
     <link id="highlight-js" rel="stylesheet" href="<?php echo $uriPath ?>.styles/atom-one-dark.min.css" type="text/css">
     <link rel="stylesheet" href="<?php echo $uriPath ?>.styles/perlite.css" type="text/css">
@@ -200,7 +228,7 @@ $jsonGraphData = getfullGraph($rootDir);
                         </svg></div>
                 </div>
             </div>
-            <div class="workspace-split mod-horizontal mod-left-split" style="width: 450px;">
+            <div class="workspace-split mod-horizontal mod-left-split" style="width: var(--perlite-left-width, 450px);">
                 <hr class="workspace-leaf-resize-handle left-dock">
                 <div class="workspace-tabs mod-top mod-top-left-space">
                     <hr class="workspace-leaf-resize-handle">
@@ -673,7 +701,7 @@ $jsonGraphData = getfullGraph($rootDir);
                     </div>
                 </div>
             </div>
-            <div class="workspace-split mod-horizontal mod-right-split" style="width: 450px;">
+            <div class="workspace-split mod-horizontal mod-right-split" style="width: var(--perlite-right-width, 450px);">
                 <hr class="workspace-leaf-resize-handle right-dock">
                 <div class="workspace-tabs mod-top mod-top-right-space">
                     <hr class="workspace-leaf-resize-handle">

@@ -2451,6 +2451,9 @@ $(document).ready(function () {
   // on phones the sidebars are drawers that start closed)
   restoreSidebarState('left');
   restoreSidebarState('right');
+  if ($(window).width() < 990) {
+    hideLeftMobile();
+  }
   document.documentElement.classList.remove('perlite-restore-left-collapsed', 'perlite-restore-right-collapsed');
 
 
@@ -2614,15 +2617,16 @@ $(document).ready(function () {
   $("#themeDropdown").change(function (e) {
     target = $(e.target)
 
-    // disable all themes
-    $('.theme').attr("disabled", 'disabled');
-
-    //enable selected if its not default
+    // switch on the selected theme and off the others; a theme that's already
+    // in the right state is left alone (switching the active theme off and on
+    // again dropped its styles for a moment on every page load)
     selectedTheme = target.val()
-
-    if (selectedTheme !== 'Default') {
-      $('#' + target.val()).attr('disabled', false);
-    }
+    $('.theme').each(function () {
+      var on = selectedTheme !== 'Default' && this.id === selectedTheme;
+      if (this.disabled === on) {
+        this.disabled = !on;
+      }
+    });
 
     localStorage.setItem('Theme', target.val());
 
