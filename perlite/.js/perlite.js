@@ -1545,6 +1545,13 @@ function renderQuartzLocalGraph() {
   });
 }
 
+// the sidebar graph box's global-graph button (the box is in the page before
+// the graph's scripts load)
+$(document).on('click', '#mynetwork .global-graph-icon', function (e) {
+  e.stopPropagation();
+  toggleQuartzGlobalGraph();
+});
+
 function toggleQuartzGlobalGraph() {
   loadQuartzGraph().then(function (graph) {
     graph.toggleGlobal(graphSlug(perliteGraphPath));

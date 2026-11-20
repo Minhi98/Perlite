@@ -693,10 +693,27 @@ body.perlite-quartz-graph-mode #localGraph {
 body.perlite-quartz-graph-mode #mynetwork {
   height: auto;
 }
-/* the graph's space (.graph-outer below) is kept while it loads */
-body.perlite-quartz-graph-mode #mynetwork:empty {
-  height: 250px;
-  margin: 0.5em 0;
+/* the Quartz graph's box is in the page from the start (index.php); hidden
+   when Perlite's own graph is used */
+body:not(.perlite-quartz-graph-mode) #mynetwork > .graph-outer.perlite-quartz-graph {
+  display: none;
+}
+/* while changing pages the new graph's canvas is drawn over the old one, which
+   is then removed; the first graph fades in */
+.graph-outer.perlite-quartz-graph > .graph-container {
+  position: relative;
+}
+.graph-outer.perlite-quartz-graph > .graph-container > canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+.perlite-quartz-graph canvas.perlite-graph-fade-in {
+  animation: perlite-graph-fade-in 0.25s ease-out;
+}
+@keyframes perlite-graph-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .graph-outer.perlite-quartz-graph {
   border-radius: 5px;

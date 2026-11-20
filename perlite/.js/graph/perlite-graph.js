@@ -129,10 +129,18 @@
 
   /* ---------- render (Quartz's renderGraph) ---------- */
 
-  async function renderGraph(container, currentSlug, cfg, callbacks) {
+  // previous: the cleanup of the graph this one replaces. Its canvas stays on
+  // screen until the new one has drawn its first frame, so changing pages
+  // swaps one graph for the other instead of blanking in between.
+  async function renderGraph(container, currentSlug, cfg, callbacks, previous) {
     var data = graphData();
-    while (container.firstChild) container.removeChild(container.firstChild);
-    if (!data) return function () { };
+    if (!previous) {
+      while (container.firstChild) container.removeChild(container.firstChild);
+    }
+    if (!data) {
+      if (previous) previous(true);
+      return function () { };
+    }
 
     var width = container.offsetWidth;
     var height = Math.max(container.offsetHeight, 250);
@@ -233,6 +241,9 @@
       eventMode: 'none', eventFeatures: { move: false, globalMove: false, click: false, wheel: false }
     });
     container.appendChild(app.canvas);
+    // the first graph in the box fades in; later ones replace the previous
+    // canvas (stacked above it) once drawn
+    if (!previous) app.canvas.classList.add('perlite-graph-fade-in');
 
     var stage = new PIXI.Container();
     app.stage.addChild(stage);
@@ -576,7 +587,7 @@
           }
         }
         // ease towards the target so labels don't flicker while the layout settles
-        n.label.alpha += (want - n.label.alpha) * 0.3;
+        n.label.alpha = instantLabels ? want : n.label.alpha + (want - n.label.alpha) * 0.3;
         if (Math.abs(want - n.label.alpha) < 0.02) n.label.alpha = want;
         var s = 1 / k;
         n.label.scale.set(s, s);
@@ -590,6 +601,7 @@
       });
     }
 
+    var instantLabels = false;
     var stopped = false;
     function animate() {
       if (stopped) return;
@@ -599,6 +611,7 @@
         n.gfx.position.set(x + width / 2, y + height / 2);
       });
       updateLabels();
+      instantLabels = false;
       linkRenderData.forEach(function (l) {
         var d = l.simulationData;
         if (d.source.x == null || d.target.x == null) return;
@@ -641,8 +654,15 @@
     fitView();
     simulation.on('tick', function () { });
     simulation.restart();
+    // labels of a graph replacing another start fully shown (no fade-in)
+    instantLabels = !!previous;
     renderPixiFromD3();
     animate();
+    if (previous) {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { previous(true); });
+      });
+    }
 
     function remember() {
       if (!layoutMemory[cfg.memory]) return;
@@ -653,12 +673,16 @@
       });
     }
 
-    return function cleanup() {
-      remember();
+    // keepMemory: leave the layout memory alone (the graph replacing this one
+    // has already started from it)
+    var cleanup = function (keepMemory) {
+      if (!keepMemory) remember();
       stopped = true;
       simulation.stop();
       try { app.destroy(true); } catch (e) { }
     };
+    cleanup.remember = remember;
+    return cleanup;
   }
 
   /* ---------- local graph (right sidebar) and global graph (overlay) ---------- */
@@ -672,6 +696,9 @@
   var callbacks = {};
   var resizeTimer = null;
 
+  // the box is normally already in the page (index.php draws it, so it's there
+  // before the graph loads); it's made here only if it isn't. The button's
+  // clicks are handled in perlite.js.
   function localContainer(host) {
     var outer = host.querySelector(':scope > .graph-outer');
     if (!outer) {
@@ -680,10 +707,9 @@
       outer.className = 'graph-outer perlite-quartz-graph';
       outer.innerHTML = '<div class="graph-container"></div><button class="global-graph-icon" aria-label="Global Graph" title="Global graph (Ctrl/Cmd + G)">' + GLOBAL_ICON + '</button>';
       host.appendChild(outer);
-      outer.querySelector('.global-graph-icon').addEventListener('click', function (e) {
-        e.stopPropagation();
-        toggleGlobal();
-      });
+    }
+    if (!outer._perliteObserved) {
+      outer._perliteObserved = true;
       if (window.ResizeObserver) {
         var lastWidth = 0;
         new ResizeObserver(function () {
@@ -708,9 +734,13 @@
     lastLocalHost = host;
     if (!host || !host.offsetParent) return; // hidden: rendered when shown
     var token = ++localToken;
-    if (localCleanup) { localCleanup(); localCleanup = null; }
+    // the current graph stays until the new one is drawn; its layout is
+    // saved now so the new one starts from it
+    var previous = localCleanup;
+    localCleanup = null;
+    if (previous) previous.remember();
     var container = localContainer(host);
-    renderGraph(container, slug, LOCAL_CONFIG, callbacks).then(function (cleanup) {
+    renderGraph(container, slug, LOCAL_CONFIG, callbacks, previous).then(function (cleanup) {
       if (token === localToken) localCleanup = cleanup;
       else cleanup();
     }).catch(function (e) { console.error('[Graph] Local render error:', e); });
