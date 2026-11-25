@@ -641,22 +641,58 @@ function getContent(str, home = false, popHover = false, anchor = "") {
 
           // Outlines
           // built from the note's headings (including ones that contain links or
-          // formatting); headings inside embedded notes are left out, like Obsidian
+          // formatting) and the headings of embedded notes that are shown on the
+          // page (an embed with ITS "no-h" / "no-h2"… hides them: not listed)
           var toc = "";
           var level = 0;
           var escapeHtml = function (text) {
             return $('<div>').text(text).html().replace(/"/g, '&quot;');
           };
+          var headingTitle = function (heading) {
+            var copy = heading.cloneNode(true);
+            copy.querySelectorAll('.copy-icon').forEach(function (c) { c.remove(); });
+            return copy.textContent.trim();
+          };
+          // hidden by the theme (display: none on the heading or on an embed it's in)
+          var hiddenInEmbed = function (heading) {
+            for (var el = heading; el && el.id !== 'mdContent'; el = el.parentElement) {
+              if ((el === heading || el.classList.contains('markdown-embed')) && getComputedStyle(el).display === 'none') {
+                return true;
+              }
+            }
+            return false;
+          };
 
-          document.querySelectorAll('#mdContent h1, #mdContent h2, #mdContent h3, #mdContent h4, #mdContent h5, #mdContent h6').forEach(function (heading) {
+          var headings = Array.from(document.querySelectorAll('#mdContent h1, #mdContent h2, #mdContent h3, #mdContent h4, #mdContent h5, #mdContent h6'))
+            .filter(function (heading) {
+              return headingTitle(heading) && (!heading.closest('.markdown-embed') || !hiddenInEmbed(heading));
+            });
 
+          // anchors: the note's own headings keep "Heading_Text" (what links to
+          // them use); an embedded heading with the same text gets "_2", "_3"…
+          var usedAnchors = {};
+          var anchors = new Map();
+          headings.forEach(function (heading) {
+            if (!heading.closest('.markdown-embed')) {
+              var anchor = headingTitle(heading).replace(/ /g, "_");
+              anchors.set(heading, anchor);
+              usedAnchors[anchor] = true;
+            }
+          });
+          headings.forEach(function (heading) {
             if (heading.closest('.markdown-embed')) {
-              return;
+              var base = headingTitle(heading).replace(/ /g, "_");
+              var anchor = base;
+              for (var n = 2; usedAnchors[anchor]; n++) {
+                anchor = base + '_' + n;
+              }
+              anchors.set(heading, anchor);
+              usedAnchors[anchor] = true;
             }
-            var titleText = heading.textContent.trim();
-            if (!titleText) {
-              return;
-            }
+          });
+
+          headings.forEach(function (heading) {
+            var titleText = headingTitle(heading);
             var openLevel = parseInt(heading.tagName.substring(1));
 
             if (openLevel > level) {
@@ -667,11 +703,12 @@ function getContent(str, home = false, popHover = false, anchor = "") {
 
             level = openLevel;
 
-            var anchor = titleText.replace(/ /g, "_");
+            var anchor = anchors.get(heading);
             toc += '<div class="tree-item-self is-clickable toc-item"><a href="#' + escapeHtml(anchor) + '">' + escapeHtml(titleText)
               + '</a></div>';
 
-            if (!heading.querySelector(':scope > a[name]')) {
+            var hasName = Array.from(heading.querySelectorAll(':scope > a[name]')).some(function (a) { return a.getAttribute('name') === anchor; });
+            if (!hasName) {
               var named = document.createElement('a');
               named.setAttribute('name', anchor);
               heading.insertBefore(named, heading.firstChild);
