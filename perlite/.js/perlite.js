@@ -642,7 +642,9 @@ function getContent(str, home = false, popHover = false, anchor = "") {
           // Outlines
           // built from the note's headings (including ones that contain links or
           // formatting) and the headings of embedded notes that are shown on the
-          // page (an embed with ITS "no-h" / "no-h2"… hides them: not listed)
+          // page (an embed with ITS "no-h" / "no-h2"… hides them: not listed).
+          // Headings inside [!infobox] callouts are left out: the infobox sits
+          // beside the text, so they'd break the outline's order
           var toc = "";
           var level = 0;
           var escapeHtml = function (text) {
@@ -665,7 +667,9 @@ function getContent(str, home = false, popHover = false, anchor = "") {
 
           var headings = Array.from(document.querySelectorAll('#mdContent h1, #mdContent h2, #mdContent h3, #mdContent h4, #mdContent h5, #mdContent h6'))
             .filter(function (heading) {
-              return headingTitle(heading) && (!heading.closest('.markdown-embed') || !hiddenInEmbed(heading));
+              return headingTitle(heading)
+                && !heading.closest('.callout[data-callout="infobox" i]')
+                && (!heading.closest('.markdown-embed') || !hiddenInEmbed(heading));
             });
 
           // anchors: the note's own headings keep "Heading_Text" (what links to
